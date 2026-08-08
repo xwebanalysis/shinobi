@@ -7,7 +7,7 @@
 
 > **Idioma:** Esta es la versión en español de la documentación. Para la versión en inglés, consulta [README.md](../../README.md).
 
-<p><em><a href="https://github.com/xscriptor/xwa">XWA</a>  <strong>submódulo enfocado</strong> en scraping web sigiloso con anti-bloqueo — en desarrollo activo</em></p>
+<p><em><a href="https://github.com/xwebanalysis/meta">XWA</a>  <strong>submódulo enfocado</strong> en scraping web sigiloso con anti-bloqueo — en desarrollo activo</em></p>
 
 <hr>
 

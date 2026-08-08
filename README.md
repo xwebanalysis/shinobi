@@ -12,7 +12,7 @@
 **Language / Idioma**  
 [English](#) | [Español](./docs/esp/README.md)
 
-<p><em><a href="https://github.com/xscriptor/xwa">XWA</a>  <strong>submodule focused</strong> on silent web scraping with anti-blocking — under active development</em></p>
+<p><em><a href="https://github.com/xwebanalysis/meta">XWA</a>  <strong>submodule focused</strong> on silent web scraping with anti-blocking — under active development</em></p>
 
 <hr>
 

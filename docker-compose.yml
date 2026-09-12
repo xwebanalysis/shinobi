@@ -1,19 +1,18 @@
-version: "3.9"
-
 services:
   shinobi:
     build: .
     container_name: shinobi
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8060:8060"
     environment:
-      - PORT=8080
+      - PORT=8060
+      - SHINOBI_DB_PATH=/data/shinobi.db
       - DATA_DIR=/data/downloads
       - EXTRACTOR_URL=http://extractor:9090
       - RUST_LOG=shinobi=info,tower_http=info
     volumes:
-      - downloads:/data/downloads
+      - shinobi-data:/data
     depends_on:
       extractor:
         condition: service_started
@@ -26,8 +25,12 @@ services:
       - "9090:9090"
     environment:
       - PORT=9090
+      - DATA_DIR=/data/downloads
     volumes:
-      - downloads:/data/downloads
+      - shinobi-data:/data
 
 volumes:
-  downloads:
+  # Single shared volume: SQLite database (/data/shinobi.db) and scraped
+  # artifacts (/data/downloads) survive container recreation and are shared
+  # between the Rust backend and the Python extractor.
+  shinobi-data:

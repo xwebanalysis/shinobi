@@ -38,7 +38,7 @@
   <tr>
     <td><strong>Shinobi Web</strong></td>
     <td><code>/</code> (raíz del monorepo)</td>
-    <td>Rust (Axum) + HTML/CSS/JS vanilla</td>
+    <td>Rust (Axum 0.8) + Angular 22</td>
     <td>Aplicación web (independiente o Docker)</td>
   </tr>
 </table>
@@ -49,9 +49,12 @@
   <li><strong>Descarga de Activos</strong> — HTML, CSS, JS, imágenes, PDFs, archivos, multimedia, fuentes</li>
   <li><strong>Filtro por Tipo de Archivo</strong> — Selecciona qué extensiones descargar</li>
   <li><strong>Restricción de Dominio</strong> — Limita el crawling al dominio objetivo o explora libremente</li>
-  <li><strong>Progreso en Tiempo Real</strong> — Stream SSE con páginas escrapeadas, archivos descargados, URL actual</li>
+  <li><strong>Progreso en Tiempo Real</strong> — Stream SSE con eventos <code>Event</code> de xwa-sdk</li>
+  <li><strong>Scheduler</strong> — Scrapes recurrentes para schedules vencidos</li>
+  <li><strong>Persistencia SQLite</strong> — WAL, migraciones con <code>schema_meta</code> y export/import completo</li>
   <li><strong>Explorador de Archivos</strong> — Navega y abre archivos descargados desde la interfaz web</li>
 </ul>
+<p><small>Frontend migrado a Angular 22 + TypeScript 6 + <code>@angular/build</code> + Vitest con tokens Nothing Design y fuentes self-hosted (Fase 5).</small></p>
 
 <h3>Sistema Anti-Bloqueo</h3>
 <ul>
@@ -60,7 +63,9 @@
   <li><strong>Delay + Jitter</strong> — Retardo base configurable con jitter aleatorio</li>
   <li><strong>Backoff Exponencial</strong> — Reintento con jitter en fallos (intentos configurables)</li>
   <li><strong>Manejo de Rate Limit</strong> — Detecta HTTP 429/503, espera y reintenta con backoff más largo</li>
-  <li><strong>Soporte de Proxies</strong> — Rotación de proxies HTTP/HTTPS/SOCKS5</li>
+  <li><strong>Soporte de Proxies</strong> — Rotación round-robin real (avanza en fallo o 429/503)</li>
+  <li><strong>robots.txt</strong> — <code>Allow</code>/<code>Disallow</code> (coincidencia más larga) y <code>Crawl-delay</code></li>
+  <li><strong>Concurrencia acotada</strong> — Máximo duro de 3 peticiones simultáneas</li>
 </ul>
 
 <hr>
@@ -68,20 +73,23 @@
 <h2>Inicio Rápido</h2>
 
 <h3>Con Docker</h3>
-<pre><code>docker compose up -d --build</code></pre>
+<pre><code>./shinobi.sh docker</code></pre>
 <ul>
-  <li>Interfaz web: <code>http://localhost:8080</code></li>
+  <li>Interfaz web / API: <code>http://localhost:8060</code></li>
+  <li>El volumen <code>shinobi-data</code> persiste la BD y las descargas</li>
 </ul>
 
 <h3>Sin Docker (Independiente)</h3>
-<pre><code>cargo run --release</code></pre>
-<p>Sin configuración. Escucha en <code>http://localhost:8080</code>. Archivos descargados en <code>./downloads/</code>.</p>
+<pre><code>./shinobi.sh            # backend :8060 + extractor :9090
+cargo run --release     # solo backend</code></pre>
+<p>Escucha en <code>http://localhost:8060</code>. BD en <code>./shinobi.db</code> y descargas en <code>./downloads/</code>.</p>
 
 <h3>Variables de Entorno</h3>
 <table>
   <tr><th>Variable</th><th>Por Defecto</th><th>Descripción</th></tr>
-  <tr><td><code>PORT</code></td><td><code>8080</code></td><td>Puerto HTTP</td></tr>
-  <tr><td><code>DATA_DIR</code></td><td><code>downloads</code></td><td>Directorio de descargas</td></tr>
+  <tr><td><code>PORT</code></td><td><code>8060</code></td><td>Puerto HTTP</td></tr>
+  <tr><td><code>SHINOBI_DB_PATH</code></td><td><code>shinobi.db</code></td><td>Ruta de la BD SQLite</td></tr>
+  <tr><td><code>DATA_DIR</code></td><td><code>downloads</code></td><td>Directorio de descargas (compartido con el extractor)</td></tr>
   <tr><td><code>RUST_LOG</code></td><td><code>shinobi=info,tower_http=info</code></td><td>Verbosidad de logs</td></tr>
 </table>
 

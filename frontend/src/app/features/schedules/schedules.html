@@ -1,0 +1,79 @@
+@if (statusMsg()) {
+  <div
+    class="inline-status"
+    [class.inline-ok]="statusType() === 'ok'"
+    [class.inline-error]="statusType() === 'error'"
+    [class.inline-warn]="statusType() === 'warn'"
+  >
+    [{{ statusType() === 'ok' ? 'OK' : statusType() === 'error' ? 'ERROR' : 'WARN' }}] {{ statusMsg() }}
+  </div>
+}
+
+<section class="panel">
+  <h2 class="section-title t-label">SCHEDULES</h2>
+
+  <div class="form-grid schedule-form">
+    <div class="form-group">
+      <label class="t-label" for="schedule-url">URL</label>
+      <input
+        id="schedule-url"
+        type="url"
+        class="input-field"
+        [(ngModel)]="newScheduleUrl"
+        placeholder="https://example.com"
+        (keydown.enter)="addSchedule()"
+      />
+    </div>
+    <div class="form-group">
+      <label class="t-label" for="schedule-interval">INTERVAL (MIN)</label>
+      <input
+        id="schedule-interval"
+        type="number"
+        class="number-input"
+        [(ngModel)]="newScheduleInterval"
+        min="5"
+        max="1440"
+      />
+    </div>
+    <div class="form-group form-submit">
+      <button type="button" class="btn-primary btn-sm" (click)="addSchedule()" [disabled]="deleting()">
+        ADD
+      </button>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="inline-status inline-loading t-label">[ LOADING... ]</div>
+  }
+
+  <div class="entry-list">
+    @for (schedule of schedules(); track schedule.id) {
+      <div class="entry">
+        <div class="entry-info">
+          <div class="entry-url">{{ schedule.url }}</div>
+          <div class="entry-meta">
+            <span class="t-label">EVERY {{ schedule.interval_min }} MIN</span>
+            @if (schedule.last_run) {
+              <span class="t-label">LAST {{ schedule.last_run.slice(0, 16).replace('T', ' ') }}</span>
+            }
+            <span class="t-label">NEXT {{ schedule.next_run.slice(0, 16).replace('T', ' ') }}</span>
+            <span class="t-label" [class.text-success]="schedule.enabled" [class.text-accent]="!schedule.enabled">
+              {{ schedule.enabled ? 'ENABLED' : 'DISABLED' }}
+            </span>
+          </div>
+        </div>
+        <div class="entry-actions">
+          <button type="button" class="btn-danger-outline btn-sm" (click)="deleteSchedule(schedule)">DELETE</button>
+        </div>
+      </div>
+    } @empty {
+      @if (!loading()) {
+        <div class="empty-state t-label">[ NO SCHEDULES. THE BACKEND SCHEDULER LAUNCHES THEM WHEN DUE. ]</div>
+      }
+    }
+  </div>
+
+  <div class="actions">
+    <button type="button" class="btn-primary btn-sm" (click)="load()">REFRESH</button>
+  </div>
+</section>

@@ -1,6 +1,6 @@
 <h1 align="center">Project Structure</h1>
 
-<p>Detailed breakdown of the Shinobi codebase.</p>
+<p>Detailed breakdown of the Shinobi codebase (backend hardened, 2026-09).</p>
 
 <hr>
 
@@ -10,27 +10,47 @@
   <tr><th>File</th><th>Purpose</th></tr>
   <tr>
     <td><code>Cargo.toml</code></td>
-    <td>Rust package manifest. Dependencies: <code>axum</code>, <code>reqwest</code> (with socks/cookies/gzip/brotli), <code>scraper</code>, <code>chromiumoxide</code> (headless Chrome), <code>rusqlite</code> (SQLite), <code>tokio</code>, <code>serde</code>, <code>tower-http</code>, <code>zip</code>, <code>flate2</code>, <code>sha2</code>, <code>regex</code>, <code>uuid</code>, <code>chrono</code>, <code>rand</code>, <code>base64</code>.</td>
+    <td>Rust package manifest. axum 0.8, tokio 1.53, tower-http 0.7, reqwest 0.13, scraper 0.27, rusqlite 0.40 (bundled), chromiumoxide 0.9 (<code>default-features = false</code>, no async-std), zip 8, rand 0.10, sha2 0.11.</td>
+  </tr>
+  <tr>
+    <td><code>Cargo.lock</code></td>
+    <td><strong>Versioned</strong> (removed from <code>.gitignore</code>) so binaries build reproducibly.</td>
   </tr>
   <tr>
     <td><code>build.rs</code></td>
-    <td>Build script that auto-compiles the Angular frontend during <code>cargo build</code>. Runs <code>npm install && npx ng build</code> in <code>frontend/</code>, output to <code>static/browser/</code>. Falls back gracefully if Node.js is unavailable.</td>
+    <td>Builds the Angular UI <strong>only</strong> when <code>SHINOBI_BUILD_FRONTEND=1</code>. Default builds/tests/clippy never touch npm or the network.</td>
+  </tr>
+  <tr>
+    <td><code>src/lib.rs</code></td>
+    <td>Library crate exposing <code>api</code>, <code>config</code>, <code>contracts</code>, <code>scraper</code>, <code>storage</code> for integration tests.</td>
+  </tr>
+  <tr>
+    <td><code>src/main.rs</code></td>
+    <td>Binary entry point: tracing, env vars (<code>PORT=8060</code>, <code>DATA_DIR</code>, <code>SHINOBI_DB_PATH</code>), DB load, CORS regex, router, scheduler spawn, Axum server.</td>
   </tr>
   <tr>
     <td><code>Dockerfile</code></td>
-    <td>Multi-stage build: stage 1 compiles Rust + Angular, stage 2 copies binary + Chromium for JS rendering. Runs as non-root <code>shinobi</code> user.</td>
+    <td>Three stages: Node 24 UI build → Rust build (with versioned lockfile cache) → Debian slim + Chromium runtime as non-root <code>shinobi</code>. Copies <code>static/</code> from the UI stage.</td>
   </tr>
   <tr>
     <td><code>docker-compose.yml</code></td>
-    <td>Two-service deployment: <code>shinobi</code> (Rust, port 8080) and <code>extractor</code> (Python, port 9090) with shared <code>downloads</code> volume.</td>
+    <td><code>shinobi</code> (:8060) + <code>extractor</code> (:9090) sharing the <code>shinobi-data</code> volume (<code>/data/shinobi.db</code>, <code>/data/downloads</code>).</td>
+  </tr>
+  <tr>
+    <td><code>.dockerignore</code></td>
+    <td>Excludes target, node_modules, venvs, DBs and downloads from the build context.</td>
   </tr>
   <tr>
     <td><code>shinobi.sh</code></td>
-    <td>Convenience launcher. Modes: <code>--fast</code> (Rust only), <code>--deep</code> (Rust + Python), <code>--python-only</code>, <code>--docker</code>. Handles npm install, ng build, Python venv, and graceful shutdown.</td>
+    <td>Launcher: <code>local</code> (default), <code>docker</code>, legacy <code>--fast</code>/<code>--deep</code>/<code>--python-only</code>/<code>--build-frontend</code>/<code>-D</code>.</td>
   </tr>
   <tr>
-    <td><code>shinobi.db</code></td>
-    <td>SQLite database (runtime). Stores jobs, deep results, and schedules.</td>
+    <td><code>clean.sh</code></td>
+    <td>Removes build artifacts, static bundle, DB, downloads and Python venv/caches (<code>--all</code> also removes <code>frontend/node_modules</code>).</td>
+  </tr>
+  <tr>
+    <td><code>tests/</code></td>
+    <td>Integration tests (<code>db_tests.rs</code>, <code>api_tests.rs</code>, <code>contracts_fixture.rs</code>) and minimal xwa-sdk fixtures.</td>
   </tr>
 </table>
 
@@ -38,369 +58,146 @@
 
 <h2><code>src/</code> — Rust Backend</h2>
 
-<h3><code>main.rs</code></h3>
-<p>Application entry point. Initializes tracing, reads env vars (<code>PORT</code>, <code>DATA_DIR</code>, <code>SHINOBI_DB_PATH</code>), sets up <code>StorageManager</code> + <code>DbStore</code>, configures Axum router with CORS, and spawns the scheduler worker (runs every 60s to trigger scheduled scrapes).</p>
+<h3><code>contracts.rs</code></h3>
+<p>Local replica of the <code>xwa-sdk 0.2.0</code> data model (no external dependency): <code>Tool</code>, <code>AnalysisStatus</code>, <code>EventType</code>, <code>Severity</code>, <code>Confidence</code>, <code>Error</code>, <code>Summary</code>, <code>Analysis</code>, <code>Finding</code>, <code>Event</code>. Optionals are skipped when <code>None</code>; enum spellings match the schemas (<code>PENDING</code>, <code>analysis_progress</code>, <code>critical</code>…).</p>
 
 <h3><code>config.rs</code></h3>
-<p>Defines <code>ScrapeConfig</code> — the full scraping parameter model with sensible defaults:</p>
+<p><code>ScrapeConfig</code>: URL, depth, concurrency, delay, max pages, robots, assets, UA rotation, proxies, retries, JS rendering, screenshots, email extraction, webhooks, dedup, rewriting, index generation, WARC, Basic auth, deep mode (structured/NLP/selectors), export format and extractor endpoint.</p>
+
+<h3><code>api/routes.rs</code></h3>
+<p>REST + SSE + scheduler in one module. Highlights:</p>
 <ul>
-  <li>URL, depth (2), concurrency (3), delay (1000ms), max pages (100)</li>
-  <li>Same-domain enforcement, robots.txt respect, asset download toggles</li>
-  <li>Anti-blocking: UA rotation, proxy list, retry count (3)</li>
-  <li>JS rendering, screenshot capture, email extraction</li>
-  <li>Deep mode: structured data, NLP, custom CSS selectors</li>
-  <li>Auth: Basic username/password with configurable mode</li>
-  <li>Export: WARC, ZIP, index.html generation</li>
-</ul>
-
-<h3><code>api/</code> — REST API Layer</h3>
-
-<h4><code>routes.rs</code></h4>
-<p>~980 lines — all HTTP endpoints in a single file. Key groups:</p>
-
-<p><strong>Scrape Jobs</strong></p>
-<ul>
-  <li><code>POST /api/scrape</code> — start scrape, returns job ID immediately, runs BFS in background tokio task</li>
-  <li><code>GET /api/jobs</code> — paginated job listing</li>
-  <li><code>GET /api/jobs/:id</code> — job detail</li>
-  <li><code>GET /api/jobs/:id/stream</code> — SSE real-time progress</li>
-  <li><code>POST /api/jobs/:id/cancel</code> — cancel running job</li>
-  <li><code>DELETE /api/jobs/:id</code> — delete job + optional file cleanup</li>
-  <li><code>POST /api/jobs/:id/export</code> — JSON export of job metadata</li>
-  <li><code>GET /api/jobs/:id/download</code> — ZIP archive of downloaded files</li>
-</ul>
-
-<p><strong>Files</strong></p>
-<ul>
-  <li><code>GET /api/files</code> — paginated file listing</li>
-  <li><code>GET /api/files/*path</code> — serve downloaded file</li>
-  <li><code>GET /api/search</code> — file search by name</li>
-</ul>
-
-<p><strong>System</strong></p>
-<ul>
-  <li><code>GET /api/stats</code> — stats (job count, active scrapes, file count, disk usage)</li>
-  <li><code>GET /api/health</code> — health check</li>
-  <li><code>POST /api/database/export</code> / <code>import</code> / <code>clear</code> — DB management</li>
-</ul>
-
-<p><strong>Deep Research</strong></p>
-<ul>
-  <li><code>POST /api/deep/scrape</code> — single-URL extract</li>
-  <li><code>POST /api/deep/batch</code> — batch URL extraction</li>
-  <li><code>POST /api/deep/crawl</code> — Python httrack crawl</li>
-  <li><code>GET /api/deep/crawl/:id/status</code> / <code>results</code> / <code>cancel</code> — crawl lifecycle</li>
-  <li><code>GET /api/deep/results</code> / <code>:id</code> — list/read results</li>
-  <li><code>DELETE /api/deep/results</code> / <code>:id</code> — delete results</li>
-  <li><code>GET /api/deep/results.csv</code> — CSV export</li>
-</ul>
-
-<p><strong>Schedules</strong></p>
-<ul>
-  <li><code>GET /api/schedules</code> — list schedules</li>
-  <li><code>POST /api/schedules</code> — create schedule (min interval: 5 min)</li>
-  <li><code>DELETE /api/schedules/:id</code> — delete schedule</li>
+  <li><code>launch_scrape()</code> — shared job creation used by <code>POST /api/scrape</code> and the scheduler.</li>
+  <li><code>spawn_scrape()</code> — semaphore (max 3), <code>Downloader</code>, progress loop with <strong>throttled</strong> SQLite writes (state transitions or every 2 s).</li>
+  <li><code>event_stream()</code> — diff-based xwa-sdk <code>Event</code> SSE (<code>analysis_started</code>, <code>analysis_progress</code>, <code>item_found</code>, <code>log</code>, <code>analysis_completed</code>/<code>analysis_error</code>).</li>
+  <li><code>job_to_analysis()</code> — `JobInfo` → xwa-sdk <code>Analysis</code> mapping.</li>
+  <li><code>schedule_is_due()</code>/<code>next_run_at()</code> — pure scheduler decision (unit-tested with an injected clock).</li>
+  <li><code>scheduler_worker()</code> — every 30 s launches due schedules and advances <code>last_run</code>/<code>next_run</code>.</li>
+  <li><code>delete_job_impl()</code> — deletes the job, its deep results and only the files listed in <code>job.files</code>.</li>
 </ul>
 
 <p>Complete endpoint reference:</p>
 <table>
   <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-  <tr><td><code>POST</code></td><td><code>/api/scrape</code></td><td>Start a new scrape job</td></tr>
-  <tr><td><code>GET</code></td><td><code>/api/jobs</code></td><td>List all jobs</td></tr>
-  <tr><td><code>GET</code></td><td><code>/api/jobs/:id</code></td><td>Get job status</td></tr>
-  <tr><td><code>GET</code></td><td><code>/api/jobs/:id/stream</code></td><td>SSE live progress stream</td></tr>
-  <tr><td><code>POST</code></td><td><code>/api/jobs/:id/cancel</code></td><td>Cancel a running job</td></tr>
-  <tr><td><code>GET</code></td><td><code>/api/files</code></td><td>List downloaded files</td></tr>
-  <tr><td><code>GET</code></td><td><code>/api/files/*path</code></td><td>Download a scraped file</td></tr>
-  <tr><td><code>POST</code></td><td><code>/api/deep/scrape</code></td><td>Deep Research extract (requires Python sidecar)</td></tr>
-  <tr><td><code>GET</code></td><td><code>/api/deep/results</code></td><td>List all deep research results</td></tr>
-  <tr><td><code>GET</code></td><td><code>/api/deep/results/:id</code></td><td>Get a specific deep result</td></tr>
+  <tr><td>POST</td><td><code>/api/scrape</code></td><td>Start a scrape</td></tr>
+  <tr><td>GET</td><td><code>/api/jobs</code> · <code>/api/jobs/{id}</code></td><td>Legacy job listing/detail</td></tr>
+  <tr><td>GET</td><td><code>/api/jobs/{id}/stream</code></td><td>SSE with xwa-sdk <code>Event</code> JSON</td></tr>
+  <tr><td>POST</td><td><code>/api/jobs/{id}/cancel</code></td><td>Cancel a running job</td></tr>
+  <tr><td>DELETE</td><td><code>/api/jobs/{id}</code></td><td>Delete job + its artifacts</td></tr>
+  <tr><td>POST</td><td><code>/api/jobs/{id}/export</code></td><td>JSON export of job + analysis + files</td></tr>
+  <tr><td>GET</td><td><code>/api/jobs/{id}/download</code></td><td>ZIP of the job's own files</td></tr>
+  <tr><td>GET</td><td><code>/api/analyses</code> · <code>/{id}</code></td><td>xwa-sdk <code>Analysis</code> listing/detail</td></tr>
+  <tr><td>GET</td><td><code>/api/analyses/{id}/export?format=json|csv</code></td><td>Attachment export</td></tr>
+  <tr><td>DELETE</td><td><code>/api/analyses/{id}</code></td><td>Semantic alias of job delete</td></tr>
+  <tr><td>GET</td><td><code>/api/health</code></td><td><code>{status,service,version,database}</code></td></tr>
+  <tr><td>GET</td><td><code>/api/files</code> · <code>/api/files/{*path}</code></td><td>File listing/read (traversal-safe)</td></tr>
+  <tr><td>GET</td><td><code>/api/search</code> · <code>/api/stats</code></td><td>File search and aggregate stats</td></tr>
+  <tr><td>GET/POST</td><td><code>/api/database/export|import|clear</code></td><td>Full DB backup/restore/reset</td></tr>
+  <tr><td>POST</td><td><code>/api/deep/scrape|batch|crawl</code></td><td>Deep Research via extractor</td></tr>
+  <tr><td>GET/POST</td><td><code>/api/deep/crawl/{id}/status|results|cancel</code></td><td>Extractor crawl lifecycle</td></tr>
+  <tr><td>GET/DELETE</td><td><code>/api/deep/results</code> · <code>/{id}</code> · <code>.csv</code></td><td>Deep result storage/export</td></tr>
+  <tr><td>GET/POST</td><td><code>/api/schedules</code> · <code>DELETE /{id}</code></td><td>Recurring scrape definitions</td></tr>
+  <tr><td>GET</td><td><code>/api/python/docs</code></td><td>Proxy to the extractor's Swagger UI</td></tr>
 </table>
 
 <h3><code>scraper/</code> — Crawling Engine</h3>
 
 <h4><code>anti_block.rs</code></h4>
-<p>Anti-blocking evasion system:</p>
 <ul>
-  <li>15 real browser User-Agent strings (Chrome, Firefox, Safari, Edge, Opera, Vivaldi, mobile)</li>
-  <li>Header randomization: Accept variants, Accept-Language (en/es/de/fr/pt-BR), Sec-CH-UA Chrome version (120–126), Sec-CH-UA-Platform, Sec-Fetch-* headers</li>
-  <li><code>random_user_agent()</code> + <code>random_headers()</code> — per-request randomization</li>
-  <li><code>backoff_ms(attempt, base_ms)</code> — exponential backoff: <code>base × 2^attempt + random(0..1000)</code></li>
+  <li><code>MAX_CONCURRENCY = 3</code> + <code>clamp_concurrency()</code></li>
+  <li><code>jitter_ms()</code> — ±20%</li>
+  <li><code>backoff_ms()</code> — exponential + full jitter, capped at 120 s</li>
+  <li><code>ProxyRotator</code> — round-robin cursor with failure-driven advance</li>
+  <li>Real browser UAs + header randomisation</li>
 </ul>
 
 <h4><code>client.rs</code></h4>
-<p>HTTP client wrapper built on <code>reqwest</code>:</p>
-<ul>
-  <li>Configurable timeout (30s), gzip + brotli decompression, cookie store</li>
-  <li>Basic Auth support (base64 credentials)</li>
-  <li>HTTP/HTTPS/SOCKS5 proxy via <code>reqwest::Proxy</code></li>
-  <li>Per-domain rate limiting with configurable delay</li>
-  <li><code>get_with_retry()</code> — retry with exponential backoff, special 429/503 rate-limit handling</li>
-</ul>
+<p>reqwest wrapper: timeouts (30 s total / 10 s connect), gzip+brotli, cookie store, Basic auth, per-domain delay with jitter, robots <code>Crawl-delay</code> integration, one pre-built client per proxy, retry with backoff and 429/503 handling.</p>
 
 <h4><code>downloader.rs</code></h4>
-<p>BFS crawling engine (~392 lines):</p>
-<ul>
-  <li>Parses target URL, loads <code>robots.txt</code>, optionally launches headless Chromium</li>
-  <li>BFS loop: pop URL → fetch (optionally via JS renderer) → extract links → save files</li>
-  <li>URL canonicalization: strip fragments, normalize slashes</li>
-  <li>Content deduplication via SHA-256 hashing</li>
-  <li>Link extraction from <code>a[href]</code>, <code>link[href]</code>, <code>img[src]</code>, <code>script[src]</code>, <code>source[src]</code>, <code>video[src]</code>, <code>audio[src]</code></li>
-  <li>Sitemap.xml parsing for additional URL discovery</li>
-  <li>Asset download filtering by extension whitelist</li>
-  <li>Offline HTML URL rewriting (same-domain only)</li>
-  <li>Screenshot capture (PNG)</li>
-  <li>Email/phone extraction from page content</li>
-  <li>Deep mode: sends HTML to Python extractor</li>
-  <li>SSE progress reporting via <code>mpsc::channel</code></li>
-  <li>Webhook notification on completion</li>
-  <li>WARC export + index.html generation</li>
-</ul>
+<p>BFS front processed in concurrent batches (bounded by <code>clamp_concurrency</code>): robots check, optional JS rendering, SHA-256 dedup, link extraction, URL rewriting, asset filtering, screenshots, email/phone extraction, deep-mode calls, WARC recording and progress via <code>ScrapeProgress</code> (includes <code>saved_files</code> for per-job deletion).</p>
 
 <h4><code>renderer.rs</code></h4>
-<p>Headless Chromium JS rendering via <code>chromiumoxide</code> (Chrome DevTools Protocol):</p>
-<ul>
-  <li>Launches with flags: <code>--no-sandbox</code>, <code>--disable-gpu</code>, <code>--disable-dev-shm-usage</code></li>
-  <li><code>fetch_page()</code> — navigates to URL, waits 3s for JS execution, returns rendered HTML + optional screenshot</li>
-</ul>
+<p>Headless Chromium via chromiumoxide 0.9 (new headless mode), 3 s render wait, HTML + optional screenshot.</p>
 
 <h4><code>extractor.rs</code></h4>
-<p>Regex-based email and phone extraction:</p>
-<ul>
-  <li>Email pattern: <code>[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}</code></li>
-  <li>Phone pattern: international format</li>
-  <li>Returns deduplicated sorted lists</li>
-</ul>
+<p>Regex email/phone extraction; phone regex is non-capturing and validates 7–15 digits so it returns the <strong>complete</strong> number.</p>
 
 <h4><code>rewriter.rs</code></h4>
-<p>URL rewriting for offline browsing:</p>
-<ul>
-  <li>Rewrites <code>href</code> and <code>src</code> attributes to relative paths</li>
-  <li>Handles absolute and protocol-relative URLs (<code>//</code>)</li>
-  <li>Same-domain only</li>
-  <li><code>generate_index()</code> — creates dark-themed index.html listing all downloaded files</li>
-</ul>
+<p>Rewrites same-domain absolute/protocol-relative URLs to relative paths and generates the offline index.</p>
 
 <h4><code>robots.rs</code></h4>
-<p>Minimal robots.txt parser:</p>
-<ul>
-  <li>Parses <code>User-agent: *</code> and <code>Disallow:</code> directives</li>
-  <li><code>is_allowed(path)</code> — checks URL against disallowed paths</li>
-</ul>
+<p>RFC-9309-style parser: <code>Allow</code>/<code>Disallow</code> with longest-match precedence and <code>Crawl-delay</code> for <code>User-agent: *</code>.</p>
 
 <h4><code>sitemap.rs</code></h4>
-<p>Sitemap.xml parser:</p>
-<ul>
-  <li>Extracts <code>&lt;loc&gt;</code> elements</li>
-  <li>Returns discovered URLs for seeding the crawl queue</li>
-</ul>
+<p><code>&lt;loc&gt;</code> extraction with CDATA and XML entity handling.</p>
 
 <h4><code>warc.rs</code></h4>
-<p>WARC archive format support:</p>
-<ul>
-  <li><code>WarcRecord</code> struct: target URI, date, content type, body</li>
-  <li>Generates WARC/1.0 format records</li>
-  <li><code>create_warc_file()</code> — concatenates records into a single archive</li>
-</ul>
+<p>WARC/1.0 writer with a <code>warcinfo</code> record and per-response <code>WARC-Record-ID</code>, <code>WARC-Warcinfo-ID</code>, <code>WARC-Payload-Digest</code> and <code>Content-Length</code>.</p>
 
 <h3><code>storage/</code> — Persistence Layer</h3>
 
 <h4><code>manager.rs</code></h4>
-<p>File storage manager:</p>
-<ul>
-  <li><code>save_file()</code> — creates parent dirs, writes to <code>{DATA_DIR}/{path}</code></li>
-  <li><code>read_file()</code> — reads with path traversal protection (<code>join_safe()</code> validates resolved path is under base dir)</li>
-  <li><code>list_files()</code> — recursive dir listing returning <code>FileInfo</code> (name, path, is_dir, size, modified)</li>
-</ul>
+<p>File tree under <code>DATA_DIR</code>: <code>save_file</code>, traversal-safe <code>read_file</code>, recursive <code>list_files</code>, and <code>remove_file</code> that prunes empty parent directories.</p>
 
 <h4><code>db.rs</code></h4>
-<p>SQLite persistence via <code>rusqlite</code> (bundled):</p>
-<ul>
-  <li>Auto-creates tables: <code>jobs</code>, <code>deep_results</code>, <code>schedules</code></li>
-  <li>CRUD for jobs, deep results, and schedules</li>
-  <li>Bulk export/import of jobs</li>
-  <li>Optional: app continues without DB if init fails</li>
-</ul>
+<p>SQLite via rusqlite (bundled): PRAGMAs (<code>journal_mode=WAL</code>, <code>foreign_keys=ON</code>, <code>busy_timeout=5000</code>), <code>schema_meta(version)</code> migrations, all queries on <code>spawn_blocking</code>, CRUD for jobs/deep results/schedules and full <code>export_all</code>/<code>import_all</code>/<code>clear_all</code>.</p>
 
 <hr>
 
-<h2><code>frontend/</code> — Angular 19 SPA</h2>
+<h2><code>frontend/</code> — Angular 22 SPA</h2>
 
-<table>
-  <tr><th>File</th><th>Purpose</th></tr>
-  <tr>
-    <td><code>package.json</code></td>
-    <td>NPM config. Dependencies: Angular 19 core/forms/router, RxJS, zone.js, tslib. DevDeps: Angular CLI 19, TypeScript 5.6.</td>
-  </tr>
-  <tr>
-    <td><code>angular.json</code></td>
-    <td>CLI config. Build output: <code>../static</code>. Builder: <code>@angular-devkit/build-angular:application</code>.</td>
-  </tr>
-  <tr>
-    <td><code>tsconfig.json</code></td>
-    <td>TypeScript config. Target: ES2022, strict mode, Angular strict templates.</td>
-  </tr>
-</table>
-
-<h3><code>src/</code></h3>
-
-<h4><code>index.html</code></h4>
-<p>Shell HTML. Loads Space Grotesk + Space Mono from Google Fonts. Lang: Spanish. Title: "Shinobi — Web Scraper".</p>
-
-<h4><code>styles.scss</code></h4>
-<p>~614 lines — full design system with CSS custom properties:</p>
-<ul>
-  <li>Dark theme (default), light theme variant (<code>.theme-light</code>)</li>
-  <li>Monospace typography (Space Mono for data, Space Grotesk for UI)</li>
-  <li>Component styles: cards, form grids, tabs, mode-tabs, progress bars, stat cards, pagination, file preview modals, terminal output, keyboard shortcuts hint</li>
-  <li>Color tokens: <code>--interactive</code> (#5B9BF6), <code>--accent</code> (#D71921), <code>--success</code> (#4A9E5C), <code>--warning</code> (#D4A843), <code>--gold</code> (#FFD700)</li>
-  <li>Status badges: queued (blue), running (warning), completed (success), failed (error), cancelled (gold)</li>
-  <li>Responsive single-column layout on mobile</li>
-</ul>
-
-<h4><code>app/</code></h4>
-
-<p><strong><code>app.component.ts</code></strong> — Root component. Shows "// shinobi." branding, Rust/Python health indicators (green/red/gray dots), theme toggle. Polls <code>/api/health</code> and <code>:9090/health</code> on init. Persists theme in localStorage.</p>
-
-<p><strong><code>app.config.ts</code></strong> — Angular Router configuration.</p>
-
-<p><strong><code>app.routes.ts</code></strong> — Single route: <code>""</code> → <code>DashboardComponent</code>.</p>
-
-<p><strong><code>models/models.ts</code></strong> — TypeScript interfaces matching Rust API types: <code>ScrapeConfig</code>, <code>JobInfo</code>, <code>FileInfo</code>, <code>DeepConfig</code>, <code>DeepResult</code>, <code>PaginatedResponse</code>.</p>
-
-<p><strong><code>services/api.service.ts</code></strong> — ~146 lines. Full API client using native <code>fetch</code> (no HttpClient). Methods for all endpoints including SSE streams via <code>EventSource</code>.</p>
-
-<p><strong><code>services/confirm.service.ts</code></strong> — Promise-based confirmation dialog.</p>
-
-<p><strong><code>services/toast.service.ts</code></strong> — Toast notifications with auto-dismiss (ok/error/warn types).</p>
-
-<p><strong><code>pages/dashboard.component.ts</code></strong> — ~368 lines. Main dashboard logic: mode selection (fast/deep), SSE streaming, paginated lists, file preview, Python crawl polling, keyboard shortcuts (<code>Ctrl+Enter</code>, <code>?</code>, <code>Escape</code>), JSON/CSV exports, DB import/export.</p>
-
-<p><strong><code>pages/dashboard.component.html</code></strong> — ~366 lines. Template with: stat cards, mode tabs, Fast Test form (URL, depth, delay, file types, anti-blocking toggles, auth config), Deep Research sub-modes (Single/Batch/Crawl), progress card, search bar, tabbed panels (Jobs, Files, Deep Results, Schedules), file preview modal, DB actions, keyboard shortcuts overlay, footer.</p>
+<p>The UI is Angular 22 (standalone components, signals, zoneless change detection, <code>@angular/build:application</code>, output <code>../static</code>, Vitest tests, self-hosted Nothing Design fonts). Layout: <code>core/</code> (api, SSE live, events, theme, export), <code>shared/</code> (terminal, metric-card, status-badge, progress, export-actions) and <code>features/</code> (dashboard, history, schedules, files). See <a href="ui-architecture.md">ui-architecture.md</a> for the full architecture and SSE <code>Event</code> handling. The backend serves the built bundle from <code>static/browser/</code>.</p>
 
 <hr>
 
 <h2><code>extractor/</code> — Python Sidecar</h2>
 
-<h3><code>main.py</code> — FastAPI Server</h3>
-<p>~274 lines, runs on port 9090:</p>
+<h3><code>main.py</code> — FastAPI Server (:9090)</h3>
 <ul>
-  <li><code>GET /health</code> — health check</li>
-  <li><code>POST /extract</code> — single-URL extraction pipeline (structured, NLP, metadata, headings, links, tables, images, custom selectors, emails, phones)</li>
-  <li><code>POST /crawl</code> — start httrack-based crawl (background thread)</li>
-  <li><code>GET /crawl/{id}</code> — crawl details</li>
-  <li><code>GET /crawl/{id}/status</code> — progress poll (pages, files, %, current URL, errors, log)</li>
-  <li><code>GET /crawl/{id}/results</code> — extracted data + ZIP path</li>
-  <li><code>POST /crawl/{id}/cancel</code> — cancel crawl</li>
+  <li><code>GET /health</code></li>
+  <li><code>POST /extract</code> — structured, NLP, metadata, headings, links, tables, images, selectors, emails/phones</li>
+  <li><code>POST /crawl</code> + <code>GET/POST /crawl/{id}/…</code> — httrack crawl lifecycle</li>
 </ul>
+<p><code>DATA_DIR</code> is shared with the backend (env override; default <code>&lt;repo&gt;/downloads</code>). Phone regex returns complete numbers and filters 7–15 digits.</p>
 
-<h3><code>extractors/</code></h3>
+<h3><code>extractors/structured.py</code></h3>
+<p>extruct (JSON-LD, microdata, Open Graph, RDFa) with a manual OG fallback, plus metadata, headings, internal/external link classification (netloc comparison), tables, images and custom CSS selectors.</p>
 
-<h4><code>structured.py</code></h4>
-<p>~166 lines — structured data extraction:</p>
-<ul>
-  <li><code>extruct</code> for JSON-LD, microdata, Open Graph, RDFa</li>
-  <li>Manual OG fallback from <code>&lt;meta&gt;</code> tags</li>
-  <li>Custom CSS selector extraction via BeautifulSoup</li>
-  <li>Metadata: title, description, keywords, canonical URL</li>
-  <li>Headings (h1–h6 outline), internal/external links, tables, images</li>
-</ul>
+<h3><code>extractors/nlp.py</code></h3>
+<p>Rule-based summarisation, entities, keywords/bigrams, sentiment, Flesch readability and text stats. If spaCy + <code>en_core_web_sm</code> are available it enriches entities (<code>method: "spacy"</code>); otherwise it degrades cleanly to <code>method: "rule-based"</code>.</p>
 
-<h4><code>nlp.py</code></h4>
-<p>~285 lines — natural language processing:</p>
-<ul>
-  <li>Text extraction (strips <code>&lt;script&gt;</code>, <code>&lt;style&gt;</code>, nav, footer, header)</li>
-  <li>Summarization: TF-based with position scoring, top 5 sentences</li>
-  <li>Entity extraction: pattern-based capitalized entities + emails</li>
-  <li>Keywords: TF-IDF style frequency/density + bigram extraction</li>
-  <li>Sentiment: dictionary-based (positive/negative word lists), score + label</li>
-  <li>Readability: Flesch Reading Ease</li>
-  <li>spaCy NER integration (PERSON, ORG, GPE, DATE, MONEY)</li>
-</ul>
+<h3><code>extractors/crawler.py</code></h3>
+<p><code>CrawlJob</code> manages the httrack subprocess, parses progress, extracts results and creates a single ZIP in the output directory (created on demand). <code>CrawlManager</code> serialises crawl jobs.</p>
 
-<h4><code>crawler.py</code></h4>
-<p>~285 lines — Python crawling via httrack:</p>
-<ul>
-  <li><code>CrawlJob</code> class: manages httrack subprocess in background thread</li>
-  <li>Configurable depth, max pages, same-domain</li>
-  <li>Progress parsing from httrack stdout</li>
-  <li>Result extraction from downloaded HTML files</li>
-  <li>ZIP creation of all files</li>
-  <li>Email/phone collection across all pages</li>
-  <li><code>CrawlManager</code> singleton: queue + single-worker execution</li>
-</ul>
+<h3><code>requirements.txt</code> / <code>requirements-dev.txt</code></h3>
+<p>Pinned versions for Python 3.13 (fastapi, uvicorn, httpx, extruct, beautifulsoup4, lxml, cssselect, spacy). The spaCy model is optional and documented; pytest is a dev-only pin.</p>
 
-<h3><code>requirements.txt</code></h3>
-<ul>
-  <li><code>fastapi>=0.115.0</code>, <code>uvicorn[standard]</code>, <code>httpx</code></li>
-  <li><code>extruct>=0.16.0</code> (structured data)</li>
-  <li><code>spacy>=3.8.0</code> + <code>en_core_web_sm</code> (NLP)</li>
-  <li><code>beautifulsoup4>=4.12.0</code>, <code>lxml>=5.3.0</code>, <code>cssselect>=1.2.0</code> (HTML parsing)</li>
-</ul>
-
-<hr>
-
-<h2><code>static/</code> — Built Frontend</h2>
-
-<table>
-  <tr><th>File</th><th>Purpose</th></tr>
-  <tr><td><code>browser/index.html</code></td><td>Compiled Angular SPA shell</td></tr>
-  <tr><td><code>browser/main.js</code></td><td>Compiled Angular bundle</td></tr>
-  <tr><td><code>browser/polyfills.js</code></td><td>Zone.js polyfills</td></tr>
-  <tr><td><code>browser/styles.css</code></td><td>Compiled styles from styles.scss</td></tr>
-</table>
-
-<hr>
-
-<h2><code>downloads/</code> — Scraped Output</h2>
-
-<table>
-  <tr><th>File</th><th>Purpose</th></tr>
-  <tr><td><code>.gitkeep</code></td><td>Placeholder to keep directory in git</td></tr>
-  <tr><td><code>*.json</code></td><td>Crawl metadata JSON exports</td></tr>
-  <tr><td><code>*.zip</code></td><td>Crawl result ZIP archives</td></tr>
-  <tr><td><code>{domain}/</code></td><td>Mirrored site directories</td></tr>
-</table>
-
-<hr>
-
-<h2><code>docs/</code> — Documentation</h2>
-
-<table>
-  <tr><th>File</th><th>Purpose</th></tr>
-  <tr><td><code>manual.md</code></td><td>Full development/production manual</td></tr>
-  <tr><td><code>ui-architecture.md</code></td><td>Frontend architecture specification</td></tr>
-  <tr><td><code>project-structure.md</code></td><td>This file — detailed codebase breakdown</td></tr>
-  <tr><td><code>esp/README.md</code></td><td>Spanish translation of main README</td></tr>
-</table>
+<h3><code>tests/</code></h3>
+<p>pytest suite (regex, structured, NLP, crawler ZIP) with no network access; run with <code>extractor/.venv/bin/pytest -q</code>.</p>
 
 <hr>
 
 <h2>Architecture Overview</h2>
 
 <pre><code>                          ┌─────────────────────────────┐
-                          │      Browser (Angular 19)    │
-                          │   localhost:8080             │
+                          │      Browser (Angular 22)    │
+                          │   localhost:8060             │
                           └──────────┬──────────────────┘
-                                     │ HTTP / SSE
+                                     │ HTTP / SSE (xwa-sdk Event)
                           ┌──────────▼──────────────────┐
-                          │     Rust Backend (Axum)      │
-                          │     localhost:8080            │
-                          │                              │
-                          │  api/routes.rs               │
+                          │     Rust Backend (Axum 0.8)  │
+                          │     localhost:8060           │
+                          │  api/routes.rs + scheduler   │
                           │  scraper/ (anti_block,       │
                           │    client, downloader,       │
                           │    renderer, extractor,      │
                           │    rewriter, robots,         │
                           │    sitemap, warc)            │
                           │  storage/ (manager, db)      │
-                          └──────────┬──────────────────┘
-                                     │ HTTP (JSON)
-                          ┌──────────▼──────────────────┐
-                          │  Python Extractor (FastAPI)  │
-                          │  localhost:9090              │
-                          │                              │
-                          │  extractors/structured.py    │
-                          │  extractors/nlp.py           │
-                          │  extractors/crawler.py       │
-                          └─────────────────────────────┘</code></pre>
+                          └──────┬───────────────┬───────┘
+                                 │ HTTP (JSON)   │ SQLite WAL
+                          ┌──────▼────────┐ ┌────▼──────────────┐
+                          │ Python :9090  │ │ shinobi.db        │
+                          │ extractor     │ │ /data/shinobi.db  │
+                          └───────────────┘ └───────────────────┘</code></pre>

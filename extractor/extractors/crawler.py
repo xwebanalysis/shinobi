@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 import shutil
 import threading
-import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -217,17 +216,15 @@ class CrawlJob:
             json.dump(meta, f, indent=2)
 
     def _create_zip(self, mirror_dir: Path):
+        """Creates the persistent ZIP once, creating the output dir if needed."""
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         zip_path = self.output_dir / f"{self.domain}.zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for file_path in sorted(mirror_dir.rglob("*")):
                 if file_path.is_file() and file_path.suffix not in {".zip", ".log"}:
                     arcname = str(file_path.relative_to(mirror_dir.parent))
                     zf.write(file_path, arcname)
-        # Move to persistent storage
-        final_zip = self.output_dir / f"{self.domain}.zip"
-        if zip_path != final_zip:
-            shutil.move(str(zip_path), str(final_zip))
-        self.zip_path = str(final_zip)
+        self.zip_path = str(zip_path)
 
 
 class CrawlManager:

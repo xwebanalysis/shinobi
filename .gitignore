@@ -1,6 +1,5 @@
 # Rust build
 target/
-Cargo.lock
 
 # Angular
 frontend/node_modules/
@@ -62,3 +61,6 @@ Thumbs.db
 # Env
 .env
 .env.*
+
+*.db-wal
+*.db-shm

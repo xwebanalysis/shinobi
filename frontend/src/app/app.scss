@@ -1,0 +1,130 @@
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding: var(--space-md) var(--space-xl);
+  border-bottom: 1px solid var(--border-visible);
+  background-color: var(--surface);
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.nav-link {
+  color: var(--text-disabled);
+  text-decoration: none;
+  letter-spacing: 0.12em;
+
+  &.active {
+    color: var(--text-display);
+  }
+
+  &:hover {
+    color: var(--text-primary);
+    opacity: 1;
+  }
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.health {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  letter-spacing: 0.12em;
+  cursor: help;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+
+  &.online {
+    background-color: var(--success);
+  }
+
+  &.offline {
+    background-color: var(--accent);
+  }
+
+  &.unknown {
+    background-color: var(--text-disabled);
+  }
+}
+
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  border: 1px solid var(--border-visible);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  padding: 0.45rem 0.7rem;
+  font-family: var(--font-data);
+  font-size: var(--caption);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+
+  &:hover {
+    opacity: 1;
+    color: var(--success);
+    border-color: var(--success);
+  }
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--space-2xl) var(--space-xl) var(--space-xl);
+  min-height: calc(100vh - 180px);
+}
+
+.footer {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0 var(--space-lg);
+  border-top: 1px solid var(--border);
+}
+
+.footer-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-disabled);
+  text-decoration: none;
+  transition: color 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  &:hover {
+    color: var(--interactive);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: var(--space-lg) var(--space-sm);
+  }
+
+  .topbar {
+    padding: var(--space-md);
+  }
+}

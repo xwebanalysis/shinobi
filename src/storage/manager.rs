@@ -34,6 +34,32 @@ impl StorageManager {
             .map_err(|e| format!("Failed to read file: {}", e))
     }
 
+    pub fn base_path(&self) -> &std::path::Path {
+        &self.base_path
+    }
+
+    /// Removes a single file and prunes the now-empty parent directories (up to
+    /// but never including the storage root).
+    pub async fn remove_file(&self, rel_path: &str) -> Result<(), String> {
+        let full_path = self.join_safe(rel_path)?;
+        if full_path.exists() {
+            fs::remove_file(&full_path)
+                .await
+                .map_err(|e| format!("Failed to remove {}: {}", rel_path, e))?;
+        }
+        let mut parent = full_path.parent().map(|p| p.to_path_buf());
+        while let Some(dir) = parent {
+            if dir == self.base_path || !dir.starts_with(&self.base_path) {
+                break;
+            }
+            match fs::remove_dir(&dir).await {
+                Ok(()) => parent = dir.parent().map(|p| p.to_path_buf()),
+                Err(_) => break,
+            }
+        }
+        Ok(())
+    }
+
     pub async fn list_files(&self, prefix: &str) -> Result<Vec<FileInfo>, String> {
         let dir = self.base_path.join(prefix);
         if !dir.exists() {
@@ -51,8 +77,14 @@ impl StorageManager {
                 let rel = path.strip_prefix(&dir).unwrap_or(&path);
                 let rel_str = rel.to_string_lossy().to_string();
                 let metadata = entry.metadata().await.map_err(|e| format!("{}", e))?;
-                let modified = metadata.modified()
-                    .map(|t| SystemTime::now().duration_since(t).unwrap_or_default().as_secs())
+                let modified = metadata
+                    .modified()
+                    .map(|t| {
+                        SystemTime::now()
+                            .duration_since(t)
+                            .unwrap_or_default()
+                            .as_secs()
+                    })
                     .unwrap_or(0);
                 let is_dir = metadata.is_dir();
                 if is_dir {

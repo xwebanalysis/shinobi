@@ -1,0 +1,123 @@
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xl);
+}
+
+.mode-tabs {
+  width: 100%;
+  margin-bottom: var(--space-lg);
+}
+
+.mode-tab {
+  flex: 1;
+  justify-content: center;
+  gap: var(--space-sm);
+}
+
+.mode-desc {
+  font-size: var(--label);
+  letter-spacing: 0.06em;
+  color: var(--text-disabled);
+}
+
+.group-title {
+  display: block;
+  margin: var(--space-lg) 0 var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+}
+
+.crawl-progress {
+  margin-top: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.crawl-results-layout {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: var(--space-sm);
+  min-height: 300px;
+}
+
+.crawl-results-sidebar {
+  max-height: 500px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  background-color: var(--black);
+}
+
+.crawl-result-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-sm);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--surface-raised);
+  }
+
+  &.selected {
+    background-color: var(--surface-raised);
+    border-left: 2px solid var(--interactive);
+  }
+}
+
+.crawl-result-url {
+  font-size: var(--caption);
+  color: var(--interactive);
+  word-break: break-all;
+}
+
+.crawl-result-meta {
+  margin-top: var(--space-xs);
+  font-size: 9px;
+  color: var(--text-secondary);
+}
+
+.crawl-results-detail {
+  max-height: 500px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  padding: var(--space-md);
+}
+
+.job-detail {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+  margin: var(--space-md) 0;
+}
+
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.current-url {
+  font-size: var(--caption);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 360px;
+}
+
+@media (max-width: 768px) {
+  .crawl-results-layout,
+  .job-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .current-url {
+    max-width: 180px;
+  }
+}

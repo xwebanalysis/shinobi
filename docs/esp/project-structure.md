@@ -2,6 +2,12 @@
 
 <p>Desglose detallado del código base de Shinobi.</p>
 
+<div style="border:1px solid #D4A843;padding:10px 14px;margin:12px 0">
+<strong>Nota:</strong> la versión inglesa (<a href="project-structure.md">docs/project-structure.md</a>)
+refleja el backend endurecido (Axum 0.8, SQLite WAL, contratos xwa-sdk, scheduler real).
+Esta traducción puede quedar desactualizada en detalles puntuales.
+</div>
+
 <hr>
 
 <h2>Directorio Raíz</h2>
@@ -14,7 +20,7 @@
   </tr>
   <tr>
     <td><code>build.rs</code></td>
-    <td>Script de compilación que auto-compila el frontend Angular durante <code>cargo build</code>. Ejecuta <code>npm install && npx ng build</code> en <code>frontend/</code>, salida en <code>static/browser/</code>. Fallback si Node.js no está disponible.</td>
+    <td>Compila el frontend Angular <strong>solo</strong> si <code>SHINOBI_BUILD_FRONTEND=1</code>. Por defecto <code>cargo build/test/clippy</code> no tocan npm ni la red.</td>
   </tr>
   <tr>
     <td><code>Dockerfile</code></td>
@@ -22,11 +28,11 @@
   </tr>
   <tr>
     <td><code>docker-compose.yml</code></td>
-    <td>Despliegue de dos servicios: <code>shinobi</code> (Rust, puerto 8080) y <code>extractor</code> (Python, puerto 9090) con volumen compartido <code>downloads</code>.</td>
+    <td>Despliegue de dos servicios: <code>shinobi</code> (Rust, puerto 8060) y <code>extractor</code> (Python, puerto 9090) con volumen compartido <code>shinobi-data</code> (<code>/data/shinobi.db</code> + <code>/data/downloads</code>).</td>
   </tr>
   <tr>
     <td><code>shinobi.sh</code></td>
-    <td>Script de lanzamiento. Modos: <code>--fast</code> (solo Rust), <code>--deep</code> (Rust + Python), <code>--python-only</code>, <code>--docker</code>. Maneja npm install, ng build, virtualenv Python, y apagado graceful.</td>
+    <td>Script de lanzamiento. Modos: <code>local</code> (default), <code>docker</code>, y alias legacy <code>--fast</code>, <code>--deep</code>, <code>--python-only</code>, <code>--build-frontend</code>. Crea el venv del extractor con uv y hace apagado graceful.</td>
   </tr>
   <tr>
     <td><code>shinobi.db</code></td>
@@ -224,59 +230,66 @@
 
 <hr>
 
-<h2><code>frontend/</code> — SPA Angular 19</h2>
+<h2><code>frontend/</code> — SPA Angular 22</h2>
 
 <table>
   <tr><th>Archivo</th><th>Propósito</th></tr>
   <tr>
     <td><code>package.json</code></td>
-    <td>Configuración NPM. Dependencias: Angular 19 core/forms/router, RxJS, zone.js, tslib. DevDeps: Angular CLI 19, TypeScript 5.6.</td>
+    <td>Configuración NPM. Dependencias: Angular 22 core/forms/router, RxJS, tslib (sin zone.js: zoneless). DevDeps: <code>@angular/build</code> 22, Angular CLI 22, TypeScript 6, Vitest + jsdom.</td>
   </tr>
   <tr>
     <td><code>angular.json</code></td>
-    <td>Configuración CLI. Salida de build: <code>../static</code>. Builder: <code>@angular-devkit/build-angular:application</code>.</td>
+    <td>Configuración CLI. Salida de build: <code>../static</code> (<code>outputHashing: none</code>). Builder: <code>@angular/build:application</code>; <code>npm start</code> en :4260 con proxy a :8060.</td>
+  </tr>
+  <tr>
+    <td><code>proxy.conf.json</code></td>
+    <td>Proxy del dev-server: <code>/api</code> → <code>http://localhost:8060</code>.</td>
   </tr>
   <tr>
     <td><code>tsconfig.json</code></td>
-    <td>Configuración TypeScript. Target: ES2022, strict mode, Angular strict templates.</td>
+    <td>Configuración TypeScript. Target: ES2022, strict mode, Angular strict templates; <code>tsconfig.spec.json</code> con tipos de Vitest.</td>
+  </tr>
+  <tr>
+    <td><code>public/fonts/</code></td>
+    <td>Fuentes self-hosted woff2 (Doto, Space Grotesk, Space Mono). Sin Google Fonts en runtime.</td>
   </tr>
 </table>
 
 <h3><code>src/</code></h3>
 
 <h4><code>index.html</code></h4>
-<p>Shell HTML. Carga Space Grotesk + Space Mono de Google Fonts. Idioma: español. Título: "Shinobi — Web Scraper".</p>
+<p>Shell HTML. Sin peticiones externas (fuentes self-hosted). Título: "Shinobi — Silent Web Scraper".</p>
 
-<h4><code>styles.scss</code></h4>
-<p>~614 líneas — sistema de diseño completo con propiedades CSS personalizadas:</p>
-<ul>
-  <li>Tema oscuro (default), variante claro (<code>.theme-light</code>)</li>
-  <li>Tipografía monospace (Space Mono para datos, Space Grotesk para UI)</li>
-  <li>Estilos de componentes: cards, form grids, tabs, mode-tabs, progress bars, stat cards, paginación, modales de previsualización, salida de terminal, atajos de teclado</li>
-  <li>Tokens de color: <code>--interactive</code> (#5B9BF6), <code>--accent</code> (#D71921), <code>--success</code> (#4A9E5C), <code>--warning</code> (#D4A843), <code>--gold</code> (#FFD700)</li>
-  <li>Badges de estado: queued (azul), running (warning), completed (success), failed (error), cancelled (gold)</li>
-  <li>Layout responsive de una columna en móvil</li>
-</ul>
+<h4><code>styles.scss</code> + <code>_fonts.scss</code></h4>
+<p>Tokens canónicos Nothing Design (idénticos a kabuki/tengu): tipografía, escala, espaciado, color dark/light, estado y <code>--gold</code>. Tema oscuro (default) y claro (<code>.theme-light</code>) de primera clase, jerarquía de 3 capas (Doto/Space Grotesk/Space Mono), sin sombras ni gradientes (solo el motivo dot-grid) y sin emojis. <code>_fonts.scss</code> declara los <code>@font-face</code> de los woff2 de <code>public/fonts</code>.</p>
 
 <h4><code>app/</code></h4>
 
-<p><strong><code>app.component.ts</code></strong> — Componente raíz. Muestra branding "// shinobi.", indicadores de salud Rust/Python (puntos verde/rojo/gris), toggle de tema. Consulta <code>/api/health</code> y <code>:9090/health</code> al iniciar. Persiste tema en localStorage.</p>
+<p><strong><code>app.ts|html|scss</code></strong> — Shell raíz: branding, navegación (<code>[ DASHBOARD ] [ HISTORY ] [ SCHEDULES ] [ FILES ]</code>), indicadores de salud Rust (<code>/api/health</code>) y Python (proxy <code>/api/python/docs</code>, estado <em>unknown</em> con tooltip si no se puede clasificar), toggle de tema y footer.</p>
 
-<p><strong><code>app.config.ts</code></strong> — Configuración del router Angular.</p>
+<p><strong><code>app.config.ts</code></strong> — Router con hash location (<code>#/history</code>, <code>#/schedules</code>, <code>#/files</code>), scroll restoration y <code>HttpClient</code>; zoneless por defecto.</p>
 
-<p><strong><code>app.routes.ts</code></strong> — Ruta única: <code>""</code> → <code>DashboardComponent</code>.</p>
+<p><strong><code>app.routes.ts</code></strong> — Rutas reales: <code>""</code> → dashboard, <code>history</code>, <code>schedules</code>, <code>files</code>, wildcard → dashboard.</p>
 
-<p><strong><code>models/models.ts</code></strong> — Interfaces TypeScript que reflejan los tipos de la API Rust: <code>ScrapeConfig</code>, <code>JobInfo</code>, <code>FileInfo</code>, <code>DeepConfig</code>, <code>DeepResult</code>, <code>PaginatedResponse</code>.</p>
+<p><strong><code>core/models.ts</code></strong> — Tipos de la API Rust (<code>ScrapeConfig</code>, <code>JobInfo</code>, <code>FileInfo</code>, <code>DeepResult</code>, <code>Schedule</code>, …) y el envelope xwa-sdk <code>Event</code>.</p>
 
-<p><strong><code>services/api.service.ts</code></strong> — ~146 líneas. Cliente API completo usando <code>fetch</code> nativo (sin HttpClient). Métodos para todos los endpoints incluyendo streams SSE vía <code>EventSource</code>.</p>
+<p><strong><code>core/api.service.ts</code></strong> — Cliente <code>HttpClient</code> para todos los endpoints (jobs, analyses, deep, schedules, database, stats) más constructores de URL (SSE, export, ZIP) y <code>requestErrorMessage</code>.</p>
 
-<p><strong><code>services/confirm.service.ts</code></strong> — Diálogo de confirmación basado en Promise.</p>
+<p><strong><code>core/live.service.ts</code></strong> — <code>EventSource</code> → <code>Observable&lt;XwaEvent&gt;</code>; registra listeners para los eventos SSE con nombre (analysis_started/progress/item_found/log/completed/error).</p>
 
-<p><strong><code>services/toast.service.ts</code></strong> — Notificaciones toast con auto-dismiss (tipos ok/error/warn).</p>
+<p><strong><code>core/events.ts</code></strong> — Helpers puros del protocolo: <code>parseXwaEvent</code>, <code>applyJobEvent</code> (reconstruye el snapshot JobInfo), <code>logLineFor</code>, <code>progressPercent</code>, <code>normalizeJobStatus</code>.</p>
 
-<p><strong><code>pages/dashboard.component.ts</code></strong> — ~368 líneas. Lógica principal del dashboard: selección de modo (fast/deep), streaming SSE, listas paginadas, previsualización de archivos, polling de crawl Python, atajos de teclado (<code>Ctrl+Enter</code>, <code>?</code>, <code>Escape</code>), exportaciones JSON/CSV, import/export de DB.</p>
+<p><strong><code>core/theme.service.ts</code></strong> — Tema dark/light con persistencia en localStorage (<code>shinobi-theme</code>). <strong><code>core/export.service.ts</code></strong> — descargas cliente JSON/CSV/texto.</p>
 
-<p><strong><code>pages/dashboard.component.html</code></strong> — ~366 líneas. Template con: stat cards, mode tabs, formulario Fast Test (URL, profundidad, delay, tipos de archivo, toggles anti-bloqueo, configuración auth), sub-modos Deep Research (Single/Batch/Crawl), progress card, barra de búsqueda, paneles con tabs (Jobs, Files, Deep Results, Schedules), modal de previsualización, acciones de DB, overlay de atajos de teclado, footer.</p>
+<h4><code>shared/</code> y <code>features/</code></h4>
+<ul>
+  <li><code>shared/</code>: terminal auto-scroll, metric-card (Doto), status-badge, progress con ARIA y export-actions (JSON cliente, CSV servidor, ZIP).</li>
+  <li><code>features/dashboard/</code>: stats, modos fast/deep y sub-modos single/crawl/batch/pycrawl, progreso SSE + terminal, resultados de crawl Python con ZIP, panel Database (export/import/clear) y atajos de teclado.</li>
+  <li><code>features/history/</code>: jobs y deep results con búsqueda, paginación, exportaciones, cancelar/borrar y detalle JSON.</li>
+  <li><code>features/schedules/</code>: listar, crear y borrar schedules (el scheduler real vive en Rust).</li>
+  <li><code>features/files/</code>: explorador de archivos descargados con filtro, paginación y modal de previsualización (imagen/texto, Esc cierra).</li>
+</ul>
 
 <hr>
 
@@ -379,13 +392,13 @@
 <h2>Diagrama de Arquitectura</h2>
 
 <pre><code>                          ┌─────────────────────────────┐
-                          │     Navegador (Angular 19)   │
-                          │   localhost:8080             │
+                          │     Navegador (Angular 22)   │
+                          │   localhost:8060             │
                           └──────────┬──────────────────┘
                                      │ HTTP / SSE
                           ┌──────────▼──────────────────┐
                           │     Backend Rust (Axum)      │
-                          │     localhost:8080            │
+                          │     localhost:8060            │
                           │                              │
                           │  api/routes.rs               │
                           │  scraper/ (anti_block,       │

@@ -1,8 +1,6 @@
 import re
-import math
 import logging
 from collections import Counter
-from typing import Optional
 
 log = logging.getLogger("extractor.nlp")
 
@@ -113,7 +111,7 @@ def extract_entities(text: str) -> dict:
     return entities
 
 
-def extract_keywords(text: str, top_n: int = 30) -> list[dict]:
+def extract_keywords(text: str, top_n: int = 30) -> dict:
     words = re.findall(r"\b[a-zA-Z]{3,}\b", text.lower())
     filtered = [w for w in words if w not in STOPWORDS and len(w) > 2]
     freqs = Counter(filtered)

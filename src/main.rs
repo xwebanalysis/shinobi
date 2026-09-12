@@ -1,8 +1,3 @@
-mod api;
-mod config;
-mod scraper;
-mod storage;
-
 use std::path::Path;
 use std::sync::Arc;
 
@@ -12,9 +7,36 @@ use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
 
-use api::routes::{AppState, self, Schedule};
-use storage::db::DbStore;
-use storage::manager::StorageManager;
+use shinobi::api::routes::{self, AppState};
+use shinobi::storage::db::DbStore;
+use shinobi::storage::manager::StorageManager;
+
+/// Default CORS policy: localhost and RFC1918 LAN origins, no credentials.
+const DEFAULT_CORS_REGEX: &str = r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|192\.168\.[0-9]{1,3}\.[0-9]{1,3}|10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3})(:[0-9]{1,5})?$";
+
+fn cors_layer() -> Option<CorsLayer> {
+    let pattern = std::env::var("XWA_CORS_ORIGINS").unwrap_or_else(|_| DEFAULT_CORS_REGEX.into());
+    match regex::Regex::new(&pattern) {
+        Ok(regex) => Some(
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::AllowOrigin::predicate(
+                    move |origin, _| {
+                        origin
+                            .to_str()
+                            .map(|value| regex.is_match(value))
+                            .unwrap_or(false)
+                    },
+                ))
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any)
+                .allow_credentials(false),
+        ),
+        Err(e) => {
+            tracing::warn!("Invalid XWA_CORS_ORIGINS regex ({}); CORS disabled", e);
+            None
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -28,13 +50,11 @@ async fn main() {
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
-        .unwrap_or(8080);
+        .unwrap_or(8060);
 
-    let data_dir = std::env::var("DATA_DIR")
-        .unwrap_or_else(|_| "downloads".into());
+    let data_dir = std::env::var("DATA_DIR").unwrap_or_else(|_| "downloads".into());
 
-    let db_path = std::env::var("SHINOBI_DB_PATH")
-        .unwrap_or_else(|_| "shinobi.db".into());
+    let db_path = std::env::var("SHINOBI_DB_PATH").unwrap_or_else(|_| "shinobi.db".into());
 
     let storage = Arc::new(StorageManager::new(&data_dir));
 
@@ -50,10 +70,10 @@ async fn main() {
         }
     };
 
-    let jobs: Arc<DashMap<String, api::routes::JobInfo>> = Arc::new(DashMap::new());
+    let jobs: Arc<DashMap<String, routes::JobInfo>> = Arc::new(DashMap::new());
 
     if let Some(ref db) = db {
-        match db.load_jobs() {
+        match db.load_jobs().await {
             Ok(saved) => {
                 for job in &saved {
                     jobs.insert(job.id.clone(), job.clone());
@@ -74,15 +94,22 @@ async fn main() {
     } else {
         "static"
     };
-    tracing::info!("Serving static files from: {}", static_dir);
+    tracing::info!(
+        "Serving static files from: {} (UI may be absent)",
+        static_dir
+    );
 
-    let app = Router::new()
+    // Axum 0.8 no longer allows nesting at the root; the static/UI files are
+    // the fallback for every non-/api path.
+    let mut app = Router::new()
         .nest("/api", api_routes)
-        .nest_service("/", ServeDir::new(static_dir))
-        .layer(CorsLayer::permissive());
+        .fallback_service(ServeDir::new(static_dir));
+    if let Some(cors) = cors_layer() {
+        app = app.layer(cors);
+    }
 
     tokio::spawn(async move {
-        scheduler_worker(scheduler_state).await;
+        routes::scheduler_worker(scheduler_state).await;
     });
 
     let addr = format!("0.0.0.0:{}", port);
@@ -92,44 +119,5 @@ async fn main() {
         .await
         .expect("Failed to bind address");
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server failed");
-}
-
-async fn scheduler_worker(state: AppState) {
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
-    loop {
-        interval.tick().await;
-        let db = match &state.db {
-            Some(d) => d.clone(),
-            None => continue,
-        };
-        let schedules = match db.load_schedules() {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let now = chrono::Utc::now();
-        for sched in &schedules {
-            if !sched.enabled { continue; }
-            let next = match chrono::DateTime::parse_from_rfc3339(&sched.next_run) {
-                Ok(t) => t.with_timezone(&chrono::Utc),
-                Err(_) => continue,
-            };
-            if next <= now {
-                tracing::info!("Scheduler triggering scrape for {}", sched.url);
-                let _cfg = serde_json::from_value::<api::routes::ScrapeQuery>(sched.config.clone()).unwrap_or(api::routes::ScrapeQuery {
-                    url: sched.url.clone(),
-                    depth: Some(2),
-                    max_pages: Some(100),
-                    ..Default::default()
-                });
-                let _ = db.save_schedule(&Schedule {
-                    next_run: (now + chrono::Duration::minutes(sched.interval_min as i64)).to_rfc3339(),
-                    last_run: Some(now.to_rfc3339()),
-                    ..sched.clone()
-                });
-            }
-        }
-    }
+    axum::serve(listener, app).await.expect("Server failed");
 }

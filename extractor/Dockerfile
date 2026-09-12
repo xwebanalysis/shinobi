@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
@@ -11,6 +11,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# Shared with the Rust backend (SQLite lives at /data/shinobi.db).
+ENV DATA_DIR=/data/downloads
+RUN mkdir -p /data/downloads
 
 EXPOSE 9090
 

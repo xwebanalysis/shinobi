@@ -1,0 +1,12 @@
+{
+  "seq": 4,
+  "type": "item_found",
+  "tool": "shinobi",
+  "analysis_id": "3f9c2a7e-1b2c-4d5e-8f90-abcdef012345",
+  "ts": "2026-09-12T10:00:05Z",
+  "payload": {
+    "kind": "email",
+    "value": "contact@example.com",
+    "url": "https://example.com/contact"
+  }
+}

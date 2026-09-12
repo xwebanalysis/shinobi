@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScrapeConfig {
+    #[serde(default)]
     pub url: String,
     #[serde(default = "default_depth")]
     pub depth: u32,
@@ -65,49 +66,111 @@ pub struct ScrapeConfig {
     pub extractor_endpoint: String,
 }
 
-fn default_depth() -> u32 { 2 }
-fn default_concurrency() -> usize { 3 }
-fn default_delay_ms() -> u64 { 1000 }
-fn default_max_pages() -> usize { 100 }
-fn default_same_domain() -> bool { true }
-fn default_respect_robots() -> bool { true }
-fn default_download_assets() -> bool { true }
-fn default_user_agent_rotation() -> bool { true }
-fn default_use_proxies() -> bool { false }
-fn default_retry_count() -> u32 { 3 }
-fn default_js_rendering() -> bool { false }
-fn default_dedup() -> bool { true }
-fn default_rewrite() -> bool { true }
-fn default_rate_limit() -> u64 { 0 }
-fn default_export_format() -> String { "json".into() }
+fn default_depth() -> u32 {
+    2
+}
+fn default_concurrency() -> usize {
+    3
+}
+fn default_delay_ms() -> u64 {
+    1000
+}
+fn default_max_pages() -> usize {
+    100
+}
+fn default_same_domain() -> bool {
+    true
+}
+fn default_respect_robots() -> bool {
+    true
+}
+fn default_download_assets() -> bool {
+    true
+}
+fn default_user_agent_rotation() -> bool {
+    true
+}
+fn default_use_proxies() -> bool {
+    false
+}
+fn default_retry_count() -> u32 {
+    3
+}
+fn default_js_rendering() -> bool {
+    false
+}
+fn default_dedup() -> bool {
+    true
+}
+fn default_rewrite() -> bool {
+    true
+}
+fn default_rate_limit() -> u64 {
+    0
+}
+fn default_export_format() -> String {
+    "json".into()
+}
 
 fn default_file_types() -> Vec<String> {
     vec![
-        "html".into(), "css".into(), "js".into(),
-        "png".into(), "jpg".into(), "jpeg".into(), "gif".into(), "svg".into(), "webp".into(),
-        "pdf".into(), "doc".into(), "docx".into(),
-        "json".into(), "xml".into(), "csv".into(),
-        "zip".into(), "tar".into(), "gz".into(),
-        "mp4".into(), "mp3".into(), "woff2".into(),
+        "html".into(),
+        "css".into(),
+        "js".into(),
+        "png".into(),
+        "jpg".into(),
+        "jpeg".into(),
+        "gif".into(),
+        "svg".into(),
+        "webp".into(),
+        "pdf".into(),
+        "doc".into(),
+        "docx".into(),
+        "json".into(),
+        "xml".into(),
+        "csv".into(),
+        "zip".into(),
+        "tar".into(),
+        "gz".into(),
+        "mp4".into(),
+        "mp3".into(),
+        "woff2".into(),
     ]
 }
 
 impl Default for ScrapeConfig {
     fn default() -> Self {
         Self {
-            url: String::new(), depth: default_depth(), concurrency: default_concurrency(),
-            delay_ms: default_delay_ms(), max_pages: default_max_pages(),
-            same_domain_only: default_same_domain(), respect_robots_txt: default_respect_robots(),
-            file_types: default_file_types(), download_assets: default_download_assets(),
-            user_agent_rotation: default_user_agent_rotation(), proxy_list: Vec::new(),
-            use_proxies: default_use_proxies(), retry_count: default_retry_count(),
-            javascript_rendering: default_js_rendering(), take_screenshots: false,
-            extract_emails: false, webhook_url: String::new(), deduplicate: default_dedup(),
-            rewrite_urls: default_rewrite(), generate_index: false, export_warc: false,
-            auth_username: String::new(), auth_password: String::new(), auth_mode: String::new(),
+            url: String::new(),
+            depth: default_depth(),
+            concurrency: default_concurrency(),
+            delay_ms: default_delay_ms(),
+            max_pages: default_max_pages(),
+            same_domain_only: default_same_domain(),
+            respect_robots_txt: default_respect_robots(),
+            file_types: default_file_types(),
+            download_assets: default_download_assets(),
+            user_agent_rotation: default_user_agent_rotation(),
+            proxy_list: Vec::new(),
+            use_proxies: default_use_proxies(),
+            retry_count: default_retry_count(),
+            javascript_rendering: default_js_rendering(),
+            take_screenshots: false,
+            extract_emails: false,
+            webhook_url: String::new(),
+            deduplicate: default_dedup(),
+            rewrite_urls: default_rewrite(),
+            generate_index: false,
+            export_warc: false,
+            auth_username: String::new(),
+            auth_password: String::new(),
+            auth_mode: String::new(),
             rate_limit: default_rate_limit(),
-            deep_mode: false, extract_structured: false, nlp_enabled: false,
-            custom_selectors: Vec::new(), export_format: default_export_format(),
+            deep_mode: false,
+            extract_structured: false,
+            nlp_enabled: false,
+            custom_selectors: Vec::new(),
+            export_format: default_export_format(),
             extractor_endpoint: String::new(),
         }
     }
@@ -118,6 +181,8 @@ impl ScrapeConfig {
         let u = self.url.trim();
         if !u.starts_with("http://") && !u.starts_with("https://") {
             format!("https://{}", u)
-        } else { u.to_string() }
+        } else {
+            u.to_string()
+        }
     }
 }

@@ -1,0 +1,152 @@
+@if (statusMsg()) {
+  <div
+    class="inline-status"
+    [class.inline-ok]="statusType() === 'ok'"
+    [class.inline-error]="statusType() === 'error'"
+    [class.inline-warn]="statusType() === 'warn'"
+  >
+    [{{ statusType() === 'ok' ? 'OK' : statusType() === 'error' ? 'ERROR' : 'WARN' }}] {{ statusMsg() }}
+  </div>
+}
+
+<section class="panel">
+  <h2 class="section-title t-label">HISTORY</h2>
+
+  <div class="search-bar">
+    <span class="search-prefix t-data">&gt;</span>
+    <input
+      type="text"
+      class="input-field"
+      [ngModel]="searchQuery()"
+      (ngModelChange)="searchQuery.set($event)"
+      placeholder="search jobs, deep results..."
+      aria-label="Search history"
+    />
+  </div>
+
+  <div class="segmented tabs" role="group" aria-label="History sections">
+    <button type="button" class="segmented-btn" [class.active]="activeTab === 'jobs'" (click)="activeTab = 'jobs'">
+      JOBS ({{ totalJobs() }})
+    </button>
+    <button type="button" class="segmented-btn" [class.active]="activeTab === 'deep'" (click)="activeTab = 'deep'">
+      DEEP ({{ totalDeep() }})
+    </button>
+  </div>
+
+  @if (activeTab === 'jobs') {
+    @if (loadingJobs()) {
+      <div class="inline-status inline-loading t-label">[ LOADING... ]</div>
+    }
+    <div class="entry-list">
+      @for (job of filteredJobs(); track job.id) {
+        <div class="entry">
+          <div class="entry-info">
+            <div class="entry-url">{{ job.url }}</div>
+            <div class="entry-meta">
+              <app-status-badge [status]="job.status" />
+              <span class="t-label">{{ job.pages_scraped }}/{{ job.total_pages }}P {{ job.files_downloaded }}F</span>
+              <span class="t-label">{{ job.emails.length }} EMAILS</span>
+              <span class="t-label">{{ job.created_at.slice(0, 19).replace('T', ' ') }}</span>
+            </div>
+          </div>
+          <div class="entry-actions">
+            <app-export-actions [job]="job" />
+            @if (job.status === 'running') {
+              <button type="button" class="btn-danger btn-sm" (click)="cancelJob(job.id)">CANCEL</button>
+            }
+            <button type="button" class="btn-danger-outline btn-sm" (click)="deleteJob(job, $event)">DELETE</button>
+          </div>
+        </div>
+      } @empty {
+        @if (!loadingJobs()) {
+          <div class="empty-state t-label">[ NO JOBS YET. ENTER A URL TO START. ]</div>
+        }
+      }
+    </div>
+    @if (totalJobs() > pageSize) {
+      <div class="pagination">
+        <button type="button" class="btn-primary btn-sm" (click)="prevPage('jobs')" [disabled]="pageJobs() === 0">PREV</button>
+        <span class="t-label">{{ pageInfo('jobs') }}</span>
+        <button type="button" class="btn-primary btn-sm" (click)="nextPage('jobs')" [disabled]="pageJobs() + pageSize >= totalJobs()">NEXT</button>
+      </div>
+    }
+  }
+
+  @if (activeTab === 'deep') {
+    @if (loadingDeep()) {
+      <div class="inline-status inline-loading t-label">[ LOADING... ]</div>
+    }
+    <div class="entry-list">
+      @for (result of filteredDeep(); track result.id) {
+        <div class="entry selectable" [class.selected]="selectedDeep()?.id === result.id" (click)="selectDeep(result)">
+          <div class="entry-info">
+            <div class="entry-url">{{ result.url }}</div>
+            <div class="entry-meta">
+              <span class="t-label">{{ result.created_at.slice(0, 10) }}</span>
+              <span class="t-label">{{ result.extracted.emails.length }} EMAILS</span>
+              @for (type of structuredTypes(result); track type) {
+                <span class="badge t-label">{{ type }}</span>
+              }
+              @if (result.nlp_data) {
+                <span class="badge t-label">NLP</span>
+              }
+            </div>
+          </div>
+          <div class="entry-actions">
+            <button type="button" class="btn-primary btn-sm" (click)="exportDeepResult(result, $event)">JSON</button>
+            <button type="button" class="btn-danger-outline btn-sm" (click)="deleteDeepResult(result, $event)">DELETE</button>
+          </div>
+        </div>
+      } @empty {
+        @if (!loadingDeep()) {
+          <div class="empty-state t-label">[ NO DEEP RESULTS YET. ]</div>
+        }
+      }
+    </div>
+    <div class="actions">
+      <button type="button" class="btn-primary btn-sm" (click)="exportDeepCsv()">EXPORT CSV</button>
+      <button type="button" class="btn-primary btn-sm" (click)="loadDeepResults()">REFRESH</button>
+      <button type="button" class="btn-danger-outline btn-sm" (click)="clearDeepResults()" [disabled]="deleting()">CLEAR ALL</button>
+    </div>
+    @if (totalDeep() > pageSize) {
+      <div class="pagination">
+        <button type="button" class="btn-primary btn-sm" (click)="prevPage('deep')" [disabled]="pageDeep() === 0">PREV</button>
+        <span class="t-label">{{ pageInfo('deep') }}</span>
+        <button type="button" class="btn-primary btn-sm" (click)="nextPage('deep')" [disabled]="pageDeep() + pageSize >= totalDeep()">NEXT</button>
+      </div>
+    }
+  }
+</section>
+
+@if (selectedDeep(); as result) {
+  <section class="panel">
+    <h2 class="section-title t-label">RESULT DETAIL</h2>
+    <div class="detail-row">
+      <span class="t-label">URL</span>
+      <span class="t-data detail-value-break">{{ result.url }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="t-label">EMAILS</span>
+      <span class="t-data detail-value-break">{{ result.extracted.emails.join(', ') || '—' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="t-label">PHONES</span>
+      <span class="t-data detail-value-break">{{ result.extracted.phones.join(', ') || '—' }}</span>
+    </div>
+    @if (result.structured_data) {
+      <details class="deep-section" open>
+        <summary class="t-label deep-summary">STRUCTURED DATA</summary>
+        <pre class="deep-pre">{{ formatJson(result.structured_data) }}</pre>
+      </details>
+    }
+    @if (result.nlp_data) {
+      <details class="deep-section">
+        <summary class="t-label deep-summary">NLP ANALYSIS</summary>
+        <pre class="deep-pre">{{ formatJson(result.nlp_data) }}</pre>
+      </details>
+    }
+    <div class="actions">
+      <button type="button" class="btn-primary btn-sm" (click)="exportDeepResult(result, $event)">EXPORT JSON</button>
+    </div>
+  </section>
+}

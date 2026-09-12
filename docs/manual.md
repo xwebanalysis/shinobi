@@ -1,169 +1,166 @@
 <h1>Shinobi Application Manual</h1>
 
-<p>This document covers local development, production configuration, and the anti-blocking architecture.</p>
+<p>This document covers local development, production configuration, the xwa-sdk contract and the anti-blocking architecture. See <a href="architecture.md">architecture.md</a> for the component/data-flow view.</p>
 
 <hr>
 
-<h2>1. Local Development Execution</h2>
+<h2>1. Local Development</h2>
 
 <h3>1.1 Prerequisites</h3>
 <ul>
-    <li>Rust 1.75+ with <code>cargo</code></li>
+    <li>Rust 1.88+ (the project is tested with 1.98) with <code>cargo</code></li>
+    <li>Python 3.13 and <code>uv</code> for the Deep Research extractor (optional)</li>
     <li>Docker Engine + Docker Compose (optional, for containerised runs)</li>
+    <li><code>httrack</code> only if you use the extractor's <code>/crawl</code> endpoint</li>
 </ul>
 
 <h3>1.2 Standalone (No Docker)</h3>
-<pre><code>cargo run
-# Listens on http://localhost:8080
-# Data dir: ./downloads/</code></pre>
+<pre><code>cargo run --release
+# Listens on http://localhost:8060
+# SQLite: ./shinobi.db   Data: ./downloads/</code></pre>
 <p>Hot-reload with <code>cargo-watch</code>:</p>
 <pre><code>cargo install cargo-watch
 cargo watch -x run</code></pre>
 
-<h3>1.3 Frontend Architecture</h3>
-<p>The frontend is an <strong>Angular 19</strong> SPA located in <code>frontend/</code>. At build time, <code>build.rs</code> automatically runs <code>ng build</code> and outputs to <code>static/browser/</code>. The Rust binary serves these files at runtime. If Angular dependencies are unavailable, the old vanilla static files in <code>static/</code> serve as fallback.</p>
+<h3>1.3 Launch Script</h3>
+<pre><code>./shinobi.sh                    # backend :8060 + extractor :9090 (SQLite local)
+./shinobi.sh --build-frontend   # also build the Angular UI
+./shinobi.sh docker             # docker compose up --build
+./shinobi.sh --fast             # backend only
+./shinobi.sh --python-only      # extractor only</code></pre>
+<p>The script creates <code>extractor/.venv</code> with <code>uv --python 3.13</code> when missing, installs the pinned requirements and waits for <code>/api/health</code> before printing the URLs.</p>
 
-<h3>1.4 Manual Frontend Build</h3>
+<h3>1.4 Frontend Build (opt-in)</h3>
+<p><code>build.rs</code> does <strong>not</strong> run npm automatically. Builds, tests and clippy are offline and deterministic. To produce the Angular bundle in <code>static/</code>:</p>
+<pre><code>SHINOBI_BUILD_FRONTEND=1 cargo build --release</code></pre>
+<p>Or manually:</p>
 <pre><code>cd frontend
 npm install --legacy-peer-deps
-npx ng build</code></pre>
+npm run build   # output: ../static/browser</code></pre>
+<p>Without <code>static/</code> the server still serves the full JSON/SSE API; only the browser UI at <code>/</code> returns 404.</p>
 
-<h3>1.3 Docker (Development)</h3>
-<pre><code>docker compose up --build
-# Listens on http://localhost:8080</code></pre>
-
-<h3>1.4 Verifying the Setup</h3>
-<p>Open <code>http://localhost:8080</code> in a browser. Enter a target URL and click <strong>Start Scrape</strong>. The progress card should update in real time via SSE.</p>
+<h3>1.5 Verifying the Setup</h3>
+<pre><code>curl -s localhost:8060/api/health
+# {"status":"ok","service":"shinobi","version":"0.1.0","database":"ok"}</code></pre>
+<p>Open <code>http://localhost:8060</code>, enter a target URL and click <strong>Start Scrape</strong>. Progress arrives as xwa-sdk <code>Event</code> objects over SSE.</p>
 
 <hr>
 
 <h2>2. Production Configuration</h2>
 
-<h3>2.1 Frontend</h3>
-<p>The frontend is vanilla HTML/CSS/JS served as static files by the Rust binary. No build step required — the files in <code>static/</code> are embedded at compile time or served at runtime from disk. For production:</p>
+<h3>2.1 Backend (Rust)</h3>
 <ul>
-    <li>Set <code>RUST_LOG=warn</code> to reduce verbosity.</li>
-    <li>Set <code>PORT=443</code> behind a reverse proxy (nginx/caddy) for HTTPS termination.</li>
-    <li>The <code>DATA_DIR</code> environment variable controls where scraped files are stored.</li>
+    <li>Build with <code>cargo build --release</code> (LTO is configured in <code>Cargo.toml</code>).</li>
+    <li><code>SHINOBI_DB_PATH=/var/lib/shinobi/shinobi.db</code> for a persistent database (WAL enabled automatically).</li>
+    <li><code>DATA_DIR=/var/lib/shinobi/downloads</code> for scraped files.</li>
+    <li><code>PORT=8060</code> by default; run behind a reverse proxy for TLS.</li>
+    <li>CORS defaults to a localhost/RFC1918 regex with credentials disabled; override with <code>XWA_CORS_ORIGINS</code> (regex).</li>
 </ul>
 
-<h3>2.2 Backend (Rust)</h3>
+<h3>2.2 Docker Production Build</h3>
+<p>The <code>Dockerfile</code> uses three stages:</p>
 <ul>
-    <li>Build with <code>cargo build --release</code> for optimised binary.</li>
-    <li>Run behind a reverse proxy or expose port 8080 directly (not recommended without TLS).</li>
-    <li>For high-traffic deployments, increase <code>concurrency</code> and <code>max_pages</code> via the UI or API.</li>
+    <li><strong>ui:</strong> builds the Angular bundle with Node 24 (<code>npm ci</code> + <code>npm run build</code>).</li>
+    <li><strong>builder:</strong> compiles the Rust binary with a dependency cache layer (the versioned <code>Cargo.lock</code> is copied in).</li>
+    <li><strong>runtime:</strong> Debian slim + Chromium, runs as non-root <code>shinobi</code>, copies the binary and the built <code>static/</code>.</li>
 </ul>
-
-<h3>2.3 Docker Production Build</h3>
-<p>The provided <code>Dockerfile</code> uses a multi-stage build:</p>
-<ul>
-    <li><strong>Stage 1 (builder):</strong> Compiles the Rust binary with <code>--release</code>.</li>
-    <li><strong>Stage 2 (runtime):</strong> Copies the binary + <code>static/</code> into a slim Debian image. Runs as non-root user <code>shinobi</code>.</li>
-</ul>
-<p>To build for production:</p>
 <pre><code>docker build -t shinobi:latest .
-docker run -d -p 8080:8080 -v downloads:/data/downloads shinobi:latest</code></pre>
+docker run -d -p 8060:8060 \
+  -e SHINOBI_DB_PATH=/data/shinobi.db -e DATA_DIR=/data/downloads \
+  -v shinobi-data:/data shinobi:latest</code></pre>
+<p>With <code>docker compose up -d --build</code> both shinobi and the extractor share the <code>shinobi-data</code> volume.</p>
 
-<h3>2.4 Security Considerations</h3>
+<h3>2.3 Security Considerations</h3>
 <ul>
-    <li>The <code>storage/manager.rs</code> implements path traversal protection — all file reads are validated against the base data directory.</li>
-    <li>The API has no authentication by design (local/internal tool). Add a reverse proxy with auth for external exposure.</li>
-    <li>CORS is permissive (<code>CorsLayer::permissive()</code>) — restrict in production to specific origins.</li>
+    <li><code>storage/manager.rs</code> validates every path against the base data directory (directory traversal protection).</li>
+    <li>Job deletion only removes files recorded for that job, never another job's domain directory.</li>
+    <li>The API has no authentication by design (local/internal tool). Use a reverse proxy with auth for external exposure.</li>
+    <li>Scraping is polite by default: robots.txt, jittered delay, retries with backoff, hard concurrency cap and a page limit.</li>
 </ul>
 
 <hr>
 
-<h2>3. Anti-Blocking Architecture</h2>
+<h2>3. xwa-sdk contract</h2>
 
-<p>The anti-blocking system (<code>src/scraper/anti_block.rs</code>) applies evasion techniques before each HTTP request:</p>
+<p>The local module <code>src/contracts.rs</code> replicates <code>xwa-sdk 0.2.0</code> types without adding a dependency: <code>Event</code>, <code>Analysis</code>, <code>Finding</code>, <code>Error</code>, <code>Summary</code> and the <code>Tool</code>/<code>Severity</code>/<code>AnalysisStatus</code>/<code>EventType</code> enums.</p>
 
-<h3>3.1 User-Agent Rotation</h3>
-<p>A pool of 15 real browser user-agent strings is maintained. A random UA is selected per request when <code>user_agent_rotation</code> is enabled.</p>
+<h3>3.1 REST aliases</h3>
+<table>
+  <tr><th>Method</th><th>Path</th><th>Response</th></tr>
+  <tr><td>GET</td><td><code>/api/analyses</code></td><td><code>{items: Analysis[], total, offset, limit}</code></td></tr>
+  <tr><td>GET</td><td><code>/api/analyses/{id}</code></td><td><code>Analysis</code></td></tr>
+  <tr><td>GET</td><td><code>/api/analyses/{id}/export?format=json|csv</code></td><td>Attachment with <code>Content-Disposition</code></td></tr>
+  <tr><td>DELETE</td><td><code>/api/analyses/{id}</code></td><td><code>{"status":"deleted","removed_files":N}</code></td></tr>
+</table>
+<p>Status mapping: <code>queued→PENDING</code>, <code>running/scraping/deep→RUNNING</code>, <code>completed→COMPLETED</code>, <code>failed→ERROR</code>, <code>cancelled→CANCELLED</code>.</p>
 
-<h3>3.2 Header Randomisation</h3>
-<p>Each request generates randomised but realistic headers:</p>
-<ul>
-    <li><code>Accept</code> — 4 variants of HTML/image/webp preferences</li>
-    <li><code>Accept-Language</code> — 8 locale variants (en-US, es-ES, de-DE, fr-FR, pt-BR, etc.)</li>
-    <li><code>Sec-CH-UA</code> — Random Chrome version between 120–126</li>
-    <li><code>Sec-CH-UA-Platform</code> — Random: Windows, macOS, or Linux</li>
-    <li><code>Sec-Fetch-*</code> — Navigate-mode headers with randomised site origin</li>
-</ul>
+<h3>3.2 SSE stream</h3>
+<pre><code>event: analysis_started
+data: {"seq":1,"type":"analysis_started","tool":"shinobi","analysis_id":"&lt;job&gt;","ts":"...","payload":{"url":"...","total_pages":10}}
 
-<h3>3.3 Request Timing</h3>
-<ul>
-    <li><strong>Base delay:</strong> Configurable (default 1000 ms) between requests.</li>
-    <li><strong>Jitter:</strong> Random 0–100% of base delay added to each request.</li>
-    <li><strong>Backoff:</strong> On failure, delay = <code>base_ms * 2^attempt + random(0..1000)</code>.</li>
-</ul>
+event: analysis_progress
+data: {"seq":2,...,"payload":{"percent":30,"pages_scraped":3,"total_pages":10,"current_url":"..."}}
 
-<h3>3.4 Rate-Limit Handling</h3>
-<p>HTTP 429 (Too Many Requests) and 503 (Service Unavailable) are detected. When hit, the scraper waits <code>5000 * 2^attempt + jitter</code> ms before retrying.</p>
+event: item_found
+data: {"seq":3,...,"payload":{"kind":"email","value":"a@b.c","url":"..."}}
 
-<h3>3.5 Proxy Support</h3>
-<p>HTTP/HTTPS/SOCKS5 proxies are supported via <code>reqwest::Proxy</code>. The proxy list is configured in the scrape request. When multiple proxies are provided, the client can rotate through them (extensible — currently uses the first proxy).</p>
+event: analysis_completed
+data: {"seq":9,...,"payload":{"status":"COMPLETED","pages_scraped":10,"files_downloaded":42}}</code></pre>
+<p>Errors during the scrape are emitted as <code>log</code> events with <code>level:"error"</code>; a terminal failure sends <code>analysis_error</code> with an xwa-sdk <code>Error</code> object.</p>
 
 <hr>
 
-<h2>4. Additional Features</h2>
+<h2>4. Anti-Blocking Architecture</h2>
 
-<h3>4.1 robots.txt & Sitemap</h3>
-<p>When <code>respect_robots_txt</code> is enabled (default), Shinobi fetches <code>/robots.txt</code> from the target domain before crawling and skips disallowed paths. It also attempts to load <code>/sitemap.xml</code> and adds discovered URLs to the crawl queue — useful for finding pages not linked from the homepage.</p>
+<p>The anti-blocking system (<code>src/scraper/anti_block.rs</code> + <code>client.rs</code>) applies these techniques:</p>
 
-<h3>4.2 Content Deduplication</h3>
-<p>Each page body is hashed with SHA-256. When <code>deduplicate</code> is enabled (default), pages with identical content are skipped. This avoids saving duplicate pages caused by URL parameters, session IDs, or mirror paths.</p>
+<h3>4.1 User-Agent and headers</h3>
+<p>A pool of real browser user-agent strings is rotated per request when <code>user_agent_rotation</code> is enabled. Each request randomises <code>Accept</code>, <code>Accept-Language</code>, <code>Sec-CH-UA</code> (Chrome version) and <code>Sec-Fetch-*</code>.</p>
 
-<h3>4.3 Email & Phone Extraction</h3>
-<p>When <code>extract_emails</code> is enabled, Shinobi scans every scraped HTML page with regex patterns and collects email addresses and phone numbers. Results appear in the progress card and are included in JSON exports.</p>
+<h3>4.2 Timing</h3>
+<ul>
+    <li><strong>Base delay:</strong> configurable (default 1000 ms) between requests to the same host.</li>
+    <li><strong>Jitter:</strong> ±20% per request (<code>jitter_ms</code>).</li>
+    <li><strong>Crawl-delay:</strong> the effective delay is the maximum of the configured delay/rate limit and the robots.txt value.</li>
+    <li><strong>Backoff:</strong> on failure, <code>base * 2^attempt + jitter</code>, capped at 120 s.</li>
+</ul>
 
-<h3>4.4 Webhooks</h3>
-<p>If a <code>webhook_url</code> is configured, Shinobi sends a POST request with a JSON payload when the scrape completes or is cancelled:</p>
-<pre><code>{
-  "event": "scrape_complete",
-  "status": "completed",
-  "url": "https://example.com",
-  "pages_scraped": 42,
-  "files_downloaded": 128,
-  "domain": "example.com"
-}</code></pre>
+<h3>4.3 Concurrency</h3>
+<p>The BFS front is consumed in batches of at most <code>concurrency</code> workers, hard-capped at <code>MAX_CONCURRENCY = 3</code>. A global semaphore (<code>AppState.scrape_semaphore</code>) also caps simultaneous scrape jobs.</p>
 
-<h3>4.5 JSON Export</h3>
-<p>Each completed job has an <strong>Export</strong> button in the Jobs tab. Clicking it downloads a JSON file containing the job metadata, all scraped file paths, and any extracted emails/phones.</p>
+<h3>4.4 Rate limits and proxies</h3>
+<p>HTTP 429/503 trigger a longer backoff and proxy rotation. When proxies are configured, requests use round-robin clients (one per proxy); network failures, 429 and 503 advance the cursor so the next attempt uses a different exit IP.</p>
 
-<h3>4.6 Screenshots</h3>
-<p>When <code>take_screenshots</code> is enabled alongside JavaScript rendering, Shinobi captures a full-page screenshot of each scraped page. Screenshots are saved as PNG files under <code>{domain}/screenshots/</code>.</p>
+<h3>4.5 robots.txt and sitemaps</h3>
+<p>robots.txt is fetched before crawling. The parser supports <code>Allow</code>, <code>Disallow</code> and <code>Crawl-delay</code>; the longest matching path wins and <code>Allow</code> breaks ties. <code>/sitemap.xml</code> is parsed (including CDATA and XML entities) to seed the queue.</p>
 
 <hr>
 
-<h2>5. JavaScript Rendering Engine</h2>
+<h2>5. Database and operations</h2>
 
-<p>Shinobi includes an optional headless browser engine for rendering JavaScript-heavy sites (SPA, React, Vue, Angular, etc.).</p>
+<h3>5.1 Export / import / clear</h3>
+<pre><code>curl -s localhost:8060/api/database/export > backup.json
+curl -s -X POST localhost:8060/api/database/import -H 'content-type: application/json' -d @backup.json
+curl -s -X POST localhost:8060/api/database/clear</code></pre>
+<p>The export (marker <code>SHINOBI_DB_V1</code>) contains <code>jobs</code>, <code>deep_results</code> and <code>schedules</code>. Import counts each table and old exports (jobs only) remain valid.</p>
 
-<h3>5.1 How It Works</h3>
-<p>When <code>javascript_rendering</code> is enabled, Shinobi launches a headless Chromium instance via the Chrome DevTools Protocol (<code>chromiumoxide</code> crate). For each HTML page, instead of fetching the raw source via HTTP, it loads the page in the browser, waits 3 seconds for JS execution, then extracts the fully rendered DOM.</p>
+<h3>5.2 Scheduler</h3>
+<p>A background task runs every 30 s, loads schedules and launches a real scrape for every entry with <code>enabled=1</code> and <code>next_run &lt;= now</code>. It reuses <code>launch_scrape()</code> (the same code path as <code>POST /api/scrape</code>) and then updates <code>last_run</code> and <code>next_run = now + interval_min</code>.</p>
 
-<h3>5.2 Requirements</h3>
-<ul>
-    <li><strong>Standalone:</strong> <code>chromium</code> or <code>google-chrome</code> must be installed and available in <code>PATH</code>.</li>
-    <li><strong>Docker:</strong> Chromium is pre-installed in the Docker image.</li>
-</ul>
+<h3>5.3 WARC export</h3>
+<p>When <code>export_warc</code> is enabled the crawl writes <code>{domain}/site.warc</code> with a file-level <code>warcinfo</code> record plus one response record per page, each with valid <code>WARC-Record-ID</code>, <code>WARC-Warcinfo-ID</code>, <code>WARC-Payload-Digest</code> and <code>Content-Length</code>.</p>
 
-<h3>5.3 Limitations</h3>
-<ul>
-    <li>JS rendering is slower than plain HTTP fetching (browser launch + navigation + render wait).</li>
-    <li>Each page takes ~3-5 seconds regardless of the configured delay.</li>
-    <li>Only HTML pages go through the renderer — assets (CSS, JS, images) are fetched via the regular HTTP client.</li>
-    <li>If Chromium is not installed, Shinobi logs a warning and falls back to the regular HTTP client.</li>
-</ul>
-
-<h3>5.4 Browser Configuration</h3>
-<p>The renderer runs in headless mode with these flags:</p>
-<pre><code>--no-sandbox
---disable-gpu
---disable-dev-shm-usage
---disable-setuid-sandbox
---disable-software-rasterizer</code></pre>
+<h3>5.4 JavaScript rendering</h3>
+<p>With <code>javascript_rendering</code> enabled, HTML pages load in headless Chromium via chromiumoxide (<code>--no-sandbox</code>, <code>--disable-gpu</code>, <code>--disable-dev-shm-usage</code>), wait 3 s for execution and return the rendered DOM plus an optional screenshot. Chromium must be installed locally; the Docker image includes it. If launch fails, Shinobi logs a warning and falls back to the HTTP client.</p>
 
 <hr>
+
+<h2>6. Testing</h2>
+<pre><code>cargo fmt --check
+cargo clippy -- -D warnings
+cargo test                      # unit + integration tests, no network
+
+cd extractor
+.venv/bin/pytest -q             # 22 tests, no network</code></pre>
 
 <p><i>End of Manual.</i></p>

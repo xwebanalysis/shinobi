@@ -1,4 +1,27 @@
+# Rust
 target/
+Cargo.lock.orig
+
+# Angular (built in its own Docker stage)
+frontend/node_modules/
+frontend/.angular/
+static/
+
+# Python
+extractor/.venv/
+extractor/venv/
+__pycache__/
+*.pyc
+
+# Runtime data
 downloads/
+*.db
+*.db-wal
+*.db-shm
+
+# Tooling / VCS
 .git/
-*.md
+.gitignore
+.vscode/
+.idea/
+*.log

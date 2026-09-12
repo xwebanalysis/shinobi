@@ -1,13 +1,12 @@
 import re
 import sys
-import json
 import logging
 import os
-from typing import Optional
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from extractors.structured import extract_structured, extract_custom, extract_metadata, extract_headings, extract_links, extract_tables, extract_images
 from extractors.nlp import analyze as nlp_analyze
@@ -20,7 +19,24 @@ logging.basicConfig(
 )
 log = logging.getLogger("extractor")
 
-app = FastAPI(title="Shinobi Extractor", version="0.3.0")
+APP_VERSION = "0.3.0"
+
+app = FastAPI(title="Shinobi Extractor", version=APP_VERSION)
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def get_data_dir() -> Path:
+    """Shared data directory.
+
+    `DATA_DIR` wins when set (Docker: `/data/downloads`); otherwise it defaults
+    to `<repo>/downloads` so the Rust backend and the extractor see the same
+    tree.
+    """
+    configured = os.environ.get("DATA_DIR")
+    if configured:
+        return Path(configured)
+    return REPO_ROOT / "downloads"
 
 
 class ExtractRequest(BaseModel):
@@ -28,7 +44,7 @@ class ExtractRequest(BaseModel):
     html: str = ""
     extract_structured: bool = True
     nlp_enabled: bool = False
-    custom_selectors: list[str] = []
+    custom_selectors: list[str] = Field(default_factory=list)
 
 
 class ExtractResponse(BaseModel):
@@ -51,10 +67,10 @@ class CrawlRequest(BaseModel):
     max_pages: int = 100
     same_domain: bool = True
     download_assets: bool = True
-    file_types: list[str] = []
+    file_types: list[str] = Field(default_factory=list)
     extract_structured: bool = True
     nlp_enabled: bool = False
-    custom_selectors: list[str] = []
+    custom_selectors: list[str] = Field(default_factory=list)
 
 
 class CrawlStartResponse(BaseModel):
@@ -65,15 +81,25 @@ class CrawlStartResponse(BaseModel):
 
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-PHONE_RE = re.compile(r"(\+?\d[\s.-]?){1,3}\(\d{2,4}\)[\s.-]?\d{3,4}[\s.-]?\d{3,4}")
+# No capture groups: `finditer(...).group(0)` returns the COMPLETE number, not
+# just the leading prefix as the old `findall` did.
+PHONE_RE = re.compile(
+    r"(?:\+\d{1,3}[\s.\-]?)?(?:\(\d{1,5}\)[\s.\-]?|\d{1,4}[\s.\-]?)\d{3,4}[\s.\-]?\d{3,4}"
+)
 
 
 def extract_emails(text: str) -> list[str]:
-    return sorted(set(EMAIL_RE.findall(text)))
+    return sorted({match.group(0).lower() for match in EMAIL_RE.finditer(text)})
 
 
 def extract_phones(text: str) -> list[str]:
-    return sorted(set(PHONE_RE.findall(text)))
+    results = set()
+    for match in PHONE_RE.finditer(text):
+        candidate = match.group(0).strip()
+        digits = sum(char.isdigit() for char in candidate)
+        if 7 <= digits <= 15:
+            results.add(candidate)
+    return sorted(results)
 
 
 def fetch_html(url: str) -> str:
@@ -159,7 +185,7 @@ def run_extraction_pipeline(html: str, url: str,
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "shinobi-extractor", "version": "0.3.0"}
+    return {"status": "ok", "service": "shinobi-extractor", "version": APP_VERSION}
 
 
 @app.post("/extract", response_model=ExtractResponse)
@@ -186,7 +212,7 @@ def extract(req: ExtractRequest):
 @app.post("/crawl")
 def start_crawl(req: CrawlRequest):
     log.info("Starting crawl: %s (depth=%d, max=%d)", req.url, req.depth, req.max_pages)
-    output_dir = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "downloads"))
+    output_dir = str(get_data_dir())
 
     def extract_cb(html, url):
         return run_extraction_pipeline(

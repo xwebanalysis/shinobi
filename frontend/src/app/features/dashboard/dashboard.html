@@ -1,0 +1,447 @@
+@if (statusMsg()) {
+  <div
+    class="inline-status"
+    [class.inline-ok]="statusType() === 'ok'"
+    [class.inline-error]="statusType() === 'error'"
+    [class.inline-warn]="statusType() === 'warn'"
+  >
+    [{{ statusType() === 'ok' ? 'OK' : statusType() === 'error' ? 'ERROR' : 'WARN' }}] {{ statusMsg() }}
+  </div>
+}
+
+<section class="stats-grid">
+  <app-metric-card label="JOBS" [value]="stats().jobs" status="pass" />
+  <app-metric-card label="ACTIVE" [value]="stats().active" [status]="stats().active > 0 ? 'low' : 'pass'" />
+  <app-metric-card label="PAGES" [value]="stats().pages" status="pass" />
+  <app-metric-card label="FILES" [value]="stats().files" status="pass" />
+  <app-metric-card label="DEEP" [value]="stats().deep" status="pass" />
+  @if (disk()) {
+    <app-metric-card label="DISK USED" [value]="disk()?.disk_size_human ?? '—'" status="pass" />
+  }
+</section>
+
+<div class="segmented mode-tabs" role="group" aria-label="Operation mode">
+  <button
+    type="button"
+    class="segmented-btn mode-tab"
+    [class.active]="mode === 'fast'"
+    (click)="mode = 'fast'"
+  >
+    FAST TEST
+    <span class="mode-desc">CRAWL + DOWNLOAD</span>
+  </button>
+  <button
+    type="button"
+    class="segmented-btn mode-tab"
+    [class.active]="mode === 'deep'"
+    (click)="mode = 'deep'"
+  >
+    DEEP RESEARCH
+    <span class="mode-desc">EXTRACT + ANALYZE</span>
+  </button>
+</div>
+
+@if (mode === 'fast') {
+  <section class="panel">
+    <h2 class="section-title t-label">SCAN CONFIG</h2>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="t-label" for="fast-url">TARGET URL</label>
+        <input
+          id="fast-url"
+          type="url"
+          class="input-field"
+          [(ngModel)]="config.url"
+          placeholder="https://example.com"
+          (keydown.enter)="startScrape()"
+        />
+      </div>
+      <div class="form-group">
+        <label class="t-label" for="fast-depth">DEPTH</label>
+        <input id="fast-depth" type="number" class="number-input" [(ngModel)]="config.depth" min="0" max="10" />
+      </div>
+      <div class="form-group">
+        <label class="t-label" for="fast-pages">MAX PAGES</label>
+        <input id="fast-pages" type="number" class="number-input" [(ngModel)]="config.max_pages" min="1" max="10000" />
+      </div>
+      <div class="form-group">
+        <label class="t-label" for="fast-delay">DELAY (MS)</label>
+        <input id="fast-delay" type="number" class="number-input" [(ngModel)]="config.delay_ms" min="0" max="30000" />
+      </div>
+      <div class="form-group">
+        <label class="t-label" for="fast-concurrency">CONCURRENCY</label>
+        <input id="fast-concurrency" type="number" class="number-input" [(ngModel)]="config.concurrency" min="1" max="20" />
+      </div>
+      <div class="form-group">
+        <label class="t-label" for="fast-rate">RATE LIMIT</label>
+        <input id="fast-rate" type="number" class="number-input" [(ngModel)]="config.rate_limit" min="0" max="60000" placeholder="0 = delay" />
+      </div>
+      <div class="form-group">
+        <label class="t-label" for="fast-types">FILE TYPES</label>
+        <input id="fast-types" type="text" class="input-field" [(ngModel)]="config.file_types" placeholder="html,css,js,png,jpg,pdf" />
+      </div>
+      <div class="form-group full">
+        <label class="t-label" for="fast-webhook">WEBHOOK URL</label>
+        <input id="fast-webhook" type="url" class="input-field" [(ngModel)]="config.webhook_url" placeholder="https://hooks.example.com/scrape-complete" />
+      </div>
+    </div>
+
+    <h3 class="t-label group-title">ANTI-BLOCKING</h3>
+    <div class="checkbox-grid">
+      <label class="checkbox-group">
+        <input type="checkbox" name="uaRotation" [(ngModel)]="config.user_agent_rotation" />
+        <span class="t-data">rotate user-agent</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" name="respectRobots" [(ngModel)]="config.respect_robots_txt" />
+        <span class="t-data">respect robots.txt</span>
+      </label>
+    </div>
+
+    <h3 class="t-label group-title">RENDERING</h3>
+    <div class="checkbox-grid">
+      <label class="checkbox-group">
+        <input type="checkbox" name="jsRender" [(ngModel)]="config.javascript_rendering" />
+        <span class="t-data">javascript rendering</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" name="screenshots" [(ngModel)]="config.take_screenshots" />
+        <span class="t-data">take screenshots</span>
+      </label>
+    </div>
+
+    <h3 class="t-label group-title">SITE CLONING</h3>
+    <div class="checkbox-grid">
+      <label class="checkbox-group">
+        <input type="checkbox" name="rewriteUrls" [(ngModel)]="config.rewrite_urls" />
+        <span class="t-data">rewrite URLs for offline browsing</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" name="genIndex" [(ngModel)]="config.generate_index" />
+        <span class="t-data">generate index.html</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" name="exportWarc" [(ngModel)]="config.export_warc" />
+        <span class="t-data">export WARC archive</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" name="dedup" [(ngModel)]="config.deduplicate" />
+        <span class="t-data">deduplicate content</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" name="sameDomain" [(ngModel)]="config.same_domain_only" />
+        <span class="t-data">same domain only</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" name="downloadAssets" [(ngModel)]="config.download_assets" />
+        <span class="t-data">download assets</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" name="extractEmails" [(ngModel)]="config.extract_emails" />
+        <span class="t-data">extract emails &amp; phones</span>
+      </label>
+    </div>
+
+    <h3 class="t-label group-title">AUTHENTICATION</h3>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="t-label" for="fast-user">USERNAME</label>
+        <input id="fast-user" type="text" class="input-field" [(ngModel)]="config.auth_username" />
+      </div>
+      <div class="form-group">
+        <label class="t-label" for="fast-pass">PASSWORD</label>
+        <input id="fast-pass" type="password" class="input-field" [(ngModel)]="config.auth_password" />
+      </div>
+      <div class="form-group">
+        <label class="t-label" for="fast-auth-mode">MODE</label>
+        <select id="fast-auth-mode" class="input-field" [(ngModel)]="config.auth_mode">
+          <option value="">NONE</option>
+          <option value="basic">BASIC AUTH</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn-primary" (click)="startScrape()" [disabled]="starting()">
+        {{ starting() ? 'SCANNING...' : 'START SCAN' }}
+      </button>
+    </div>
+  </section>
+}
+
+@if (mode === 'deep') {
+  <section class="panel">
+    <h2 class="section-title t-label">DEEP RESEARCH</h2>
+    <div class="segmented submode-tabs" role="group" aria-label="Deep research submode">
+      <button type="button" class="segmented-btn" [class.active]="deepSubMode === 'single'" (click)="deepSubMode = 'single'">
+        SINGLE URL
+      </button>
+      <button type="button" class="segmented-btn" [class.active]="deepSubMode === 'crawl'" (click)="deepSubMode = 'crawl'">
+        CRAWL + EXTRACT
+      </button>
+      <button type="button" class="segmented-btn" [class.active]="deepSubMode === 'batch'" (click)="deepSubMode = 'batch'">
+        BATCH URLS
+      </button>
+      <button type="button" class="segmented-btn" [class.active]="deepSubMode === 'pycrawl'" (click)="deepSubMode = 'pycrawl'">
+        PYTHON CRAWL + ZIP
+      </button>
+    </div>
+
+    @if (deepSubMode === 'single') {
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="t-label" for="deep-url">TARGET URL</label>
+          <input id="deep-url" type="url" class="input-field" [(ngModel)]="deepConfig.url" placeholder="https://example.com/page" (keydown.enter)="startDeepSingle()" />
+        </div>
+      </div>
+      <h3 class="t-label group-title">EXTRACTION</h3>
+      <div class="checkbox-grid">
+        <label class="checkbox-group">
+          <input type="checkbox" name="extractStructured" [(ngModel)]="deepConfig.extract_structured" />
+          <span class="t-data">structured data (JSON-LD, microdata, OG)</span>
+        </label>
+        <label class="checkbox-group">
+          <input type="checkbox" name="nlpEnabled" [(ngModel)]="deepConfig.nlp_enabled" />
+          <span class="t-data">NLP analysis</span>
+        </label>
+      </div>
+      <h3 class="t-label group-title">CUSTOM SELECTORS</h3>
+      <div class="form-group full">
+        <input type="text" class="input-field" [(ngModel)]="customSelectorInput" placeholder=".product-price, .article-body" />
+        <span class="field-hint">CSS SELECTORS SEPARATED BY COMMAS</span>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-primary" (click)="startDeepSingle()" [disabled]="deepStarting()">
+          {{ deepStarting() ? 'EXTRACTING...' : 'EXTRACT PAGE' }}
+        </button>
+      </div>
+    }
+
+    @if (deepSubMode === 'crawl') {
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="t-label" for="deep-crawl-url">TARGET URL</label>
+          <input id="deep-crawl-url" type="url" class="input-field" [(ngModel)]="deepCrawlConfig.url" placeholder="https://example.com" (keydown.enter)="startDeepCrawl()" />
+        </div>
+        <div class="form-group">
+          <label class="t-label" for="deep-crawl-depth">DEPTH</label>
+          <input id="deep-crawl-depth" type="number" class="number-input" [(ngModel)]="deepCrawlConfig.depth" min="0" max="10" />
+        </div>
+        <div class="form-group">
+          <label class="t-label" for="deep-crawl-pages">MAX PAGES</label>
+          <input id="deep-crawl-pages" type="number" class="number-input" [(ngModel)]="deepCrawlConfig.max_pages" min="1" max="1000" />
+        </div>
+      </div>
+      <h3 class="t-label group-title">EXTRACTION</h3>
+      <div class="checkbox-grid">
+        <label class="checkbox-group">
+          <input type="checkbox" name="crawlExtractStructured" [(ngModel)]="deepCrawlConfig.extract_structured" />
+          <span class="t-data">structured data per page</span>
+        </label>
+        <label class="checkbox-group">
+          <input type="checkbox" name="crawlNlpEnabled" [(ngModel)]="deepCrawlConfig.nlp_enabled" />
+          <span class="t-data">NLP analysis per page</span>
+        </label>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-primary" (click)="startDeepCrawl()" [disabled]="starting()">
+          {{ starting() ? 'CRAWLING...' : 'DEEP CRAWL' }}
+        </button>
+      </div>
+    }
+
+    @if (deepSubMode === 'batch') {
+      <div class="form-group full">
+        <label class="t-label" for="batch-urls">URLS (ONE PER LINE)</label>
+        <textarea id="batch-urls" rows="6" [(ngModel)]="batchUrls" placeholder="https://example.com/page1&#10;https://example.com/page2"></textarea>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-primary" (click)="startDeepBatch()" [disabled]="deepStarting()">
+          {{ deepStarting() ? 'EXTRACTING...' : 'EXTRACT BATCH' }}
+        </button>
+      </div>
+    }
+
+    @if (deepSubMode === 'pycrawl') {
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="t-label" for="py-url">TARGET URL</label>
+          <input id="py-url" type="url" class="input-field" [(ngModel)]="pyCrawlConfig.url" placeholder="https://example.com" (keydown.enter)="startPyCrawl()" />
+        </div>
+        <div class="form-group">
+          <label class="t-label" for="py-depth">DEPTH</label>
+          <input id="py-depth" type="number" class="number-input" [(ngModel)]="pyCrawlConfig.depth" min="0" max="10" />
+        </div>
+        <div class="form-group">
+          <label class="t-label" for="py-pages">MAX PAGES</label>
+          <input id="py-pages" type="number" class="number-input" [(ngModel)]="pyCrawlConfig.max_pages" min="1" max="1000" />
+        </div>
+      </div>
+      <h3 class="t-label group-title">EXTRACTION</h3>
+      <div class="checkbox-grid">
+        <label class="checkbox-group">
+          <input type="checkbox" name="pyExtractStructured" [(ngModel)]="pyCrawlConfig.extract_structured" />
+          <span class="t-data">structured data per page</span>
+        </label>
+        <label class="checkbox-group">
+          <input type="checkbox" name="pyNlpEnabled" [(ngModel)]="pyCrawlConfig.nlp_enabled" />
+          <span class="t-data">NLP analysis per page</span>
+        </label>
+      </div>
+      <div class="field-hint">DOWNLOADS HTML, CSS, JS, IMAGES AND PACKAGES INTO ZIP</div>
+      <div class="actions">
+        <button type="button" class="btn-primary" (click)="startPyCrawl()" [disabled]="deepStarting()">
+          {{ deepStarting() ? 'STARTING...' : 'CRAWL + ZIP' }}
+        </button>
+      </div>
+
+      @if (crawlJobId()) {
+        <div class="crawl-progress">
+          <div class="detail-row">
+            <span class="t-label">STATUS</span>
+            <app-status-badge [status]="crawlStatus()" />
+          </div>
+          <div class="detail-row">
+            <span class="t-label">PAGES</span>
+            <span class="t-data">{{ crawlPages() }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="t-label">FILES</span>
+            <span class="t-data">{{ crawlFiles() }}</span>
+          </div>
+          <app-progress [value]="crawlProgress()" label="CRAWL PROGRESS" />
+          @if (crawlStatus() === 'running') {
+            <div class="actions">
+              <button type="button" class="btn-danger" (click)="cancelPyCrawl()">CANCEL</button>
+            </div>
+          }
+          <app-terminal [lines]="crawlLog()" title="CRAWL LOG" emptyText="[ NO LOG LINES ]" />
+        </div>
+      }
+    }
+  </section>
+}
+
+@if (crawlPagesList().length) {
+  <section class="panel">
+    <h2 class="section-title t-label">CRAWL RESULTS ({{ crawlPagesList().length }} PAGES)</h2>
+    @if (crawlResult()?.zip_path) {
+      <div class="actions">
+        <button type="button" class="btn-primary" (click)="windowOpen('/api/files/' + crawlResult()?.domain + '.zip')">
+          DOWNLOAD ZIP
+        </button>
+      </div>
+    }
+    <div class="crawl-results-layout">
+      <div class="crawl-results-sidebar">
+        @for (page of crawlPagesList(); track page.url) {
+          <button
+            type="button"
+            class="crawl-result-item"
+            [class.selected]="crawlSelected()?.url === page.url"
+            (click)="crawlSelected.set(page)"
+          >
+            <div class="t-data crawl-result-url">{{ page.url }}</div>
+            <div class="t-label crawl-result-meta">
+              {{ (page.emails || []).length }} EMAILS / {{ (page.phones || []).length }} PHONES
+            </div>
+          </button>
+        }
+      </div>
+      <div class="crawl-results-detail">
+        @if (crawlSelected(); as page) {
+          <div class="detail-row">
+            <span class="t-label">URL</span>
+            <span class="t-data detail-value-break">{{ page.url }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="t-label">EMAILS</span>
+            <span class="t-data detail-value-break">{{ (page.emails || []).join(', ') || '—' }}</span>
+          </div>
+          @if (page.structured) {
+            <details class="deep-section" open>
+              <summary class="t-label deep-summary">STRUCTURED DATA</summary>
+              <pre class="deep-pre">{{ formatJson(page.structured) }}</pre>
+            </details>
+          }
+          @if (page.nlp) {
+            <details class="deep-section" open>
+              <summary class="t-label deep-summary">NLP ANALYSIS</summary>
+              <pre class="deep-pre">{{ formatJson(page.nlp) }}</pre>
+            </details>
+          }
+          @if (page.metadata) {
+            <details class="deep-section">
+              <summary class="t-label deep-summary">METADATA</summary>
+              <pre class="deep-pre">{{ formatJson(page.metadata) }}</pre>
+            </details>
+          }
+        } @else {
+          <div class="empty-state t-label">[ SELECT A PAGE TO VIEW DETAILS ]</div>
+        }
+      </div>
+    </div>
+  </section>
+}
+
+@if (activeJob(); as job) {
+  <section class="panel">
+    <h2 class="section-title t-label">PROGRESS</h2>
+    <app-progress [value]="progress()" [label]="job.status.toUpperCase()" />
+    <div class="job-detail">
+      <div class="detail-section">
+        <div class="detail-row">
+          <span class="t-label">STATUS</span>
+          <app-status-badge [status]="job.status" />
+        </div>
+        <div class="detail-row">
+          <span class="t-label">PAGES</span>
+          <span class="t-data">{{ job.pages_scraped }} / {{ job.total_pages }}</span>
+        </div>
+        <div class="detail-row">
+          <span class="t-label">FILES</span>
+          <span class="t-data">{{ job.files_downloaded }}</span>
+        </div>
+      </div>
+      <div class="detail-section">
+        <div class="detail-row">
+          <span class="t-label">CURRENT URL</span>
+          <span class="t-data current-url">{{ job.current_url || '—' }}</span>
+        </div>
+        <div class="detail-row">
+          <span class="t-label">EMAILS / PHONES</span>
+          <span class="t-data">{{ job.emails.length }} / {{ job.phones.length }}</span>
+        </div>
+        <div class="detail-row">
+          <span class="t-label">ERRORS</span>
+          <span class="t-data" [class.text-accent]="job.errors.length > 0">{{ job.errors.length }}</span>
+        </div>
+      </div>
+    </div>
+    <app-terminal [lines]="jobLog()" title="JOB LOG" emptyText="[ NO EVENTS YET ]" />
+    @if (job.status === 'running') {
+      <div class="actions">
+        <button type="button" class="btn-danger" (click)="cancelJob(job.id)">CANCEL</button>
+      </div>
+    }
+  </section>
+}
+
+<section class="panel">
+  <h2 class="section-title t-label">DATABASE</h2>
+  <div class="actions">
+    <button type="button" class="btn-primary btn-sm" (click)="exportDatabase()">EXPORT</button>
+    <button type="button" class="btn-primary btn-sm" (click)="importDatabase()">IMPORT</button>
+    <button type="button" class="btn-danger-outline btn-sm" (click)="clearDatabase()" [disabled]="deleting()">
+      CLEAR ALL
+    </button>
+  </div>
+</section>
+
+@if (showKeys()) {
+  <div class="keys-hint t-label">
+    <span><kbd>CTRL</kbd>+<kbd>ENTER</kbd> START</span>
+    <span><kbd>?</kbd> TOGGLE HINTS</span>
+    <span><kbd>ESC</kbd> CLOSE</span>
+  </div>
+}

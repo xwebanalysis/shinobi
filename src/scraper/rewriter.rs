@@ -2,7 +2,7 @@ use scraper::{Html, Selector};
 use url::Url;
 
 pub fn rewrite_html(html: &str, _source_url: &Url, save_path: &str, domain: &str) -> String {
-    let save_dir = save_path.rsplit('/').skip(1).next().unwrap_or("");
+    let save_dir = save_path.rsplit('/').nth(1).unwrap_or("");
     let depth = save_dir.matches('/').count() + 1;
 
     let doc = Html::parse_document(html);
@@ -88,13 +88,63 @@ a:hover{{background:#1a1a1a}}
 </style></head><body>
 <h1>// {} — cloned site</h1>
 <hr style="border-color:#2a2a2a">
-"#, domain, domain);
+"#,
+        domain, domain
+    );
 
     for file in files {
-        if file.contains("screenshots") { continue; }
+        if file.contains("screenshots") {
+            continue;
+        }
         html.push_str(&format!("<a href=\"{}\">{}</a>\n", file, file));
     }
 
     html.push_str("</body></html>");
     html
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base() -> Url {
+        Url::parse("https://example.com/").unwrap()
+    }
+
+    #[test]
+    fn rewrites_same_domain_links_to_relative_paths() {
+        let html = r#"<a href="https://example.com/about">About</a><img src="https://example.com/img/logo.png">"#;
+        let rewritten = rewrite_html(html, &base(), "example.com/page/index.html", "example.com");
+        assert!(rewritten.contains("href=\"../about\""), "{}", rewritten);
+        assert!(
+            rewritten.contains("src=\"../img/logo.png\""),
+            "{}",
+            rewritten
+        );
+    }
+
+    #[test]
+    fn keeps_external_links_untouched() {
+        let html = r#"<a href="https://other.example.org/x">External</a>"#;
+        let rewritten = rewrite_html(html, &base(), "example.com/index.html", "example.com");
+        assert!(rewritten.contains("https://other.example.org/x"));
+    }
+
+    #[test]
+    fn rewrites_protocol_relative_same_domain_links() {
+        let html = r#"<script src="//example.com/js/app.js"></script>"#;
+        let rewritten = rewrite_html(html, &base(), "example.com/a/index.html", "example.com");
+        assert!(rewritten.contains("src=\"../js/app.js\""), "{}", rewritten);
+    }
+
+    #[test]
+    fn generated_index_lists_files_and_skips_screenshots() {
+        let files = vec![
+            "example.com/index.html".to_string(),
+            "example.com/screenshots/a.png".to_string(),
+        ];
+        let index = generate_index(&files, "example.com");
+        assert!(index.contains("example.com/index.html"));
+        assert!(!index.contains("screenshots"));
+    }
 }

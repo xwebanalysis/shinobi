@@ -1,0 +1,65 @@
+<section class="panel">
+  <h2 class="section-title t-label">DOWNLOADED FILES ({{ total() }})</h2>
+
+  <div class="search-bar">
+    <span class="search-prefix t-data">&gt;</span>
+    <input
+      type="text"
+      class="input-field"
+      [ngModel]="searchQuery()"
+      (ngModelChange)="searchQuery.set($event)"
+      placeholder="filter files..."
+      aria-label="Filter files"
+    />
+  </div>
+
+  @if (loading()) {
+    <div class="inline-status inline-loading t-label">[ LOADING... ]</div>
+  }
+
+  <div class="file-list">
+    @for (file of filteredFiles(); track file.path) {
+      <button type="button" class="file-item" (click)="preview(file)">
+        <span class="file-ext t-label">{{ extension(file.name).toUpperCase() || '?' }}</span>
+        <span class="file-name t-data">{{ file.path }}</span>
+        <span class="file-size t-label">{{ formatSize(file.size) }}</span>
+      </button>
+    } @empty {
+      @if (!loading()) {
+        <div class="empty-state t-label">[ NO FILES YET. ]</div>
+      }
+    }
+  </div>
+
+  <div class="actions">
+    <button type="button" class="btn-primary btn-sm" (click)="loadFiles()">REFRESH</button>
+  </div>
+
+  @if (total() > pageSize) {
+    <div class="pagination">
+      <button type="button" class="btn-primary btn-sm" (click)="prevPage()" [disabled]="page() === 0">PREV</button>
+      <span class="t-label">{{ pageInfo() }}</span>
+      <button type="button" class="btn-primary btn-sm" (click)="nextPage()" [disabled]="page() + pageSize >= total()">NEXT</button>
+    </div>
+  }
+</section>
+
+@if (previewFile(); as file) {
+  <div class="preview-overlay" (click)="closePreview()" role="presentation">
+    <div class="preview-modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" [attr.aria-label]="file.path">
+      <div class="preview-header">
+        <span class="t-data">{{ file.path }}</span>
+        <button type="button" class="btn-primary btn-sm" (click)="closePreview()">CLOSE</button>
+      </div>
+      <div class="preview-body">
+        @if (previewLoading()) {
+          <span class="inline-status inline-loading t-label">[ LOADING... ]</span>
+        } @else if (previewImageUrl()) {
+          <img [src]="previewImageUrl()" [alt]="file.name" />
+        } @else {
+          <pre class="preview-text t-data">{{ previewText() }}</pre>
+        }
+      </div>
+    </div>
+  </div>
+}

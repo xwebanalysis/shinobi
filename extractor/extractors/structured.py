@@ -1,9 +1,7 @@
 import extruct
-import json
 import re
-from typing import Optional
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 
 def extract_structured(html: str, url: str) -> dict:
@@ -104,7 +102,7 @@ def extract_links(html: str, url: str) -> dict:
     internal = []
     external = []
     anchor = []
-    domain = re.sub(r"https?://", "", url).split("/")[0]
+    domain = urlparse(url).netloc
 
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
@@ -113,10 +111,11 @@ def extract_links(html: str, url: str) -> dict:
             continue
         try:
             full = urljoin(url, href)
+            same_domain = urlparse(full).netloc == domain
         except Exception:
             continue
         entry = {"href": full, "text": text}
-        if domain in full:
+        if same_domain:
             internal.append(entry)
         else:
             external.append(entry)

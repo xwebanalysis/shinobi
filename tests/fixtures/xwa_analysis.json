@@ -1,0 +1,14 @@
+{
+  "id": "3f9c2a7e-1b2c-4d5e-8f90-abcdef012345",
+  "tool": "shinobi",
+  "tool_version": "0.1.0",
+  "target": "https://example.com",
+  "status": "COMPLETED",
+  "analysis_type": "crawler",
+  "created_at": "2026-09-12T10:00:00Z",
+  "summary": {
+    "total_items": 2,
+    "by_severity": {},
+    "by_category": {"emails": 1, "phones": 1}
+  }
+}

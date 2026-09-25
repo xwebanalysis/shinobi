@@ -3,6 +3,22 @@
   margin: var(--space-md) 0 var(--space-lg);
 }
 
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.chart-block {
+  min-width: 0;
+}
+
+.chart-title {
+  margin-bottom: var(--space-sm);
+  letter-spacing: 0.12em;
+}
+
 .entry-list {
   display: flex;
   flex-direction: column;

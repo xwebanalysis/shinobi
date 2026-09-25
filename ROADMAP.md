@@ -42,7 +42,7 @@ This file is formatted to be synced automatically with GitHub Issues using the `
 - [x] Real round-robin proxy rotation (advances on network failure/429/503)
 - [x] Explicit request timeouts
 - [ ] Request fingerprint randomisation (TLS client hello)
-- [ ] Global cross-job throttle beyond the per-domain delay
+- [x] Global cross-job throttle beyond the per-domain delay (`SHINOBI_GLOBAL_RPS`, token bucket)
 
 ## Web Interface <!-- phase:web-ui -->
 

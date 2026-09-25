@@ -12,6 +12,7 @@ use tracing::{info, warn};
 
 use crate::config::ScrapeConfig;
 use crate::scraper::anti_block::{self, ProxyRotator};
+use crate::scraper::throttle;
 
 /// Effective per-domain delay: the configured rate limit (or delay) never goes
 /// below the `Crawl-delay` declared in robots.txt.
@@ -168,6 +169,11 @@ impl ScrapeClient {
         }
 
         self.wait_for_slot(url).await;
+
+        // Process-wide cross-job throttle (SHINOBI_GLOBAL_RPS). Composes with
+        // the per-domain delay above: a request needs both its domain slot and
+        // a global token before it is sent.
+        throttle::global_throttle().acquire().await;
 
         let response = match req.send().await {
             Ok(response) => response,

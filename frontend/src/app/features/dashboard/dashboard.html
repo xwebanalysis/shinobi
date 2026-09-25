@@ -20,6 +20,24 @@
   }
 </section>
 
+<section class="panel">
+  <h2 class="section-title t-label">OVERVIEW</h2>
+  <div class="charts-grid">
+    <div class="chart-block">
+      <h3 class="t-label chart-title">JOB STATUS</h3>
+      <app-xwa-chart kind="donut" [data]="statusDonutData()" unit="JOBS" title="Job status distribution" />
+    </div>
+    <div class="chart-block">
+      <h3 class="t-label chart-title">PAGES PER JOB</h3>
+      <app-xwa-chart kind="h-bars" [data]="pagesPerJobData()" title="Pages per job" />
+    </div>
+    <div class="chart-block">
+      <h3 class="t-label chart-title">ASSETS PER JOB</h3>
+      <app-xwa-chart kind="h-bars" [data]="filesPerJobData()" title="Assets per job" />
+    </div>
+  </div>
+</section>
+
 <div class="segmented mode-tabs" role="group" aria-label="Operation mode">
   <button
     type="button"

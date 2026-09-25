@@ -16,6 +16,11 @@ import {
   ScrapeConfig,
   XwaEvent,
 } from '../../core/models';
+import {
+  XwaChartColorKey,
+  XwaChartComponent,
+  XwaChartDatum,
+} from '../../shared/charts/xwa-chart.component';
 import { MetricCardComponent } from '../../shared/metric-card/metric-card';
 import { ProgressComponent } from '../../shared/progress/progress';
 import { StatusBadgeComponent } from '../../shared/status-badge/status-badge';
@@ -29,6 +34,22 @@ interface DashboardStats {
   deep: number;
 }
 
+/** Maps a job status (uppercased) to the chart severity color key. */
+function jobStatusColor(status: string): XwaChartColorKey {
+  switch (status) {
+    case 'COMPLETED':
+      return 'success';
+    case 'RUNNING':
+    case 'QUEUED':
+      return 'warning';
+    case 'FAILED':
+    case 'CANCELLED':
+      return 'critical';
+    default:
+      return 'neutral-strong';
+  }
+}
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
@@ -38,6 +59,7 @@ interface DashboardStats {
     ProgressComponent,
     StatusBadgeComponent,
     TerminalComponent,
+    XwaChartComponent,
   ],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.scss',
@@ -103,6 +125,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
   });
   protected readonly disk = signal<DiskStats | null>(null);
 
+  /** All jobs fetched for the overview charts (same request as the stats). */
+  protected readonly jobs = signal<JobInfo[]>([]);
+
   protected readonly statusMsg = signal('');
   protected readonly statusType = signal<'ok' | 'error' | 'warn' | ''>('');
   protected readonly showKeys = signal(false);
@@ -124,6 +149,41 @@ export class DashboardComponent implements OnInit, OnDestroy {
   protected readonly crawlSelected = signal<PythonCrawlPage | null>(null);
 
   protected readonly crawlPagesList = computed(() => this.crawlResult()?.results ?? []);
+
+  // ── overview charts ───────────────────────────────────────────────────
+
+  protected readonly statusDonutData = computed<XwaChartDatum[]>(() => {
+    const counts = new Map<string, number>();
+    for (const job of this.jobs()) {
+      const key = job.status.toUpperCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([label, value]) => ({
+      label,
+      value,
+      color: jobStatusColor(label),
+    }));
+  });
+
+  protected readonly pagesPerJobData = computed<XwaChartDatum[]>(() =>
+    this.jobs()
+      .filter((job) => job.pages_scraped > 0)
+      .map((job) => ({ label: this.shortJobLabel(job), value: job.pages_scraped })),
+  );
+
+  protected readonly filesPerJobData = computed<XwaChartDatum[]>(() =>
+    this.jobs()
+      .filter((job) => job.files_downloaded > 0)
+      .map((job) => ({ label: this.shortJobLabel(job), value: job.files_downloaded })),
+  );
+
+  private shortJobLabel(job: JobInfo): string {
+    try {
+      return new URL(job.url).hostname;
+    } catch {
+      return job.url;
+    }
+  }
 
   private stream: Subscription | null = null;
   private streamClosed = true;
@@ -192,6 +252,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   protected loadStats(): void {
     this.api.listJobs(0, 200).subscribe({
       next: (page) => {
+        this.jobs.set(page.items);
         this.stats.update((current) => ({
           ...current,
           jobs: page.total,

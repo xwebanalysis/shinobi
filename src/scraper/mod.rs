@@ -6,4 +6,5 @@ pub mod renderer;
 pub mod rewriter;
 pub mod robots;
 pub mod sitemap;
+pub mod throttle;
 pub mod warc;

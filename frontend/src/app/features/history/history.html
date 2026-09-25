@@ -37,6 +37,16 @@
     @if (loadingJobs()) {
       <div class="inline-status inline-loading t-label">[ LOADING... ]</div>
     }
+    <div class="charts-grid">
+      <div class="chart-block">
+        <h3 class="t-label chart-title">JOBS PER DAY</h3>
+        <app-xwa-chart kind="line" [data]="jobsPerDayData()" title="Jobs per day" />
+      </div>
+      <div class="chart-block">
+        <h3 class="t-label chart-title">JOB STATUS</h3>
+        <app-xwa-chart kind="donut" [data]="statusDonutData()" unit="JOBS" title="Job status distribution" />
+      </div>
+    </div>
     <div class="entry-list">
       @for (job of filteredJobs(); track job.id) {
         <div class="entry">

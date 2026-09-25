@@ -5,13 +5,34 @@ import { ActivatedRoute } from '@angular/router';
 import { ApiService, requestErrorMessage } from '../../core/api.service';
 import { ExportService } from '../../core/export.service';
 import { DeepResult, JobInfo } from '../../core/models';
+import {
+  XwaChartColorKey,
+  XwaChartComponent,
+  XwaChartDatum,
+} from '../../shared/charts/xwa-chart.component';
 import { ExportActionsComponent } from '../../shared/export-actions/export-actions';
 import { StatusBadgeComponent } from '../../shared/status-badge/status-badge';
+
+/** Maps a job status (uppercased) to the chart severity color key. */
+function jobStatusColor(status: string): XwaChartColorKey {
+  switch (status) {
+    case 'COMPLETED':
+      return 'success';
+    case 'RUNNING':
+    case 'QUEUED':
+      return 'warning';
+    case 'FAILED':
+    case 'CANCELLED':
+      return 'critical';
+    default:
+      return 'neutral-strong';
+  }
+}
 
 @Component({
   selector: 'app-history',
   standalone: true,
-  imports: [ExportActionsComponent, FormsModule, StatusBadgeComponent],
+  imports: [ExportActionsComponent, FormsModule, StatusBadgeComponent, XwaChartComponent],
   templateUrl: './history.html',
   styleUrl: './history.scss',
 })
@@ -53,6 +74,35 @@ export class HistoryComponent implements OnInit, OnDestroy {
     );
   });
 
+  // ── charts ────────────────────────────────────────────────────────────
+
+  /** All jobs (up to 1000) for the overview charts; the list stays paginated. */
+  protected readonly chartJobs = signal<JobInfo[]>([]);
+
+  protected readonly statusDonutData = computed<XwaChartDatum[]>(() => {
+    const counts = new Map<string, number>();
+    for (const job of this.chartJobs()) {
+      const key = job.status.toUpperCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([label, value]) => ({
+      label,
+      value,
+      color: jobStatusColor(label),
+    }));
+  });
+
+  protected readonly jobsPerDayData = computed<XwaChartDatum[]>(() => {
+    const byDay = new Map<string, number>();
+    for (const job of this.chartJobs()) {
+      const day = job.created_at.slice(0, 10) || 'UNKNOWN';
+      byDay.set(day, (byDay.get(day) ?? 0) + 1);
+    }
+    return [...byDay.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([label, value]) => ({ label, value }));
+  });
+
   protected readonly filteredDeep = computed(() => {
     const query = this.searchQuery().toLowerCase();
     if (!query) {
@@ -73,8 +123,12 @@ export class HistoryComponent implements OnInit, OnDestroy {
       this.activeTab = 'deep';
     }
     this.loadJobs();
+    this.loadChartJobs();
     this.loadDeepResults();
-    this.jobsTimer = setInterval(() => this.loadJobs(), 3000);
+    this.jobsTimer = setInterval(() => {
+      this.loadJobs();
+      this.loadChartJobs();
+    }, 3000);
   }
 
   ngOnDestroy(): void {
@@ -115,6 +169,13 @@ export class HistoryComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Fetches the full job list (paged, up to 1000) for the overview charts. */
+  protected loadChartJobs(): void {
+    this.api.listJobs(0, 1000).subscribe({
+      next: (page) => this.chartJobs.set(page.items),
+    });
+  }
+
   protected cancelJob(id: string): void {
     this.api.cancelJob(id).subscribe({
       next: () => {
@@ -133,6 +194,7 @@ export class HistoryComponent implements OnInit, OnDestroy {
     this.api.deleteJob(job.id).subscribe({
       next: () => {
         this.jobs.update((items) => items.filter((item) => item.id !== job.id));
+        this.chartJobs.update((items) => items.filter((item) => item.id !== job.id));
         this.totalJobs.update((total) => Math.max(0, total - 1));
         this.setStatus('JOB DELETED');
       },

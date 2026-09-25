@@ -5,6 +5,21 @@
   margin-bottom: var(--space-xl);
 }
 
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-lg);
+}
+
+.chart-block {
+  min-width: 0;
+}
+
+.chart-title {
+  margin-bottom: var(--space-sm);
+  letter-spacing: 0.12em;
+}
+
 .mode-tabs {
   width: 100%;
   margin-bottom: var(--space-lg);

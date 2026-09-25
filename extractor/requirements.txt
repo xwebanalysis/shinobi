@@ -1,5 +1,5 @@
 fastapi==0.141.1
-uvicorn==0.52.4
+uvicorn==0.54.0
 httpx==0.28.1
 extruct==0.18.0
 beautifulsoup4==4.15.0

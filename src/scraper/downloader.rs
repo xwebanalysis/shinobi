@@ -22,6 +22,7 @@ use crate::scraper::renderer::Renderer;
 use crate::scraper::rewriter::{generate_index, rewrite_html};
 use crate::scraper::robots::RobotsTxt;
 use crate::scraper::sitemap;
+use crate::scraper::throttle;
 use crate::scraper::warc::{create_warc_file, WarcRecord};
 use crate::storage::manager::StorageManager;
 use tracing::{error, info, warn};
@@ -388,6 +389,10 @@ impl Downloader {
 
         let (body, screenshot_data) = if should_render {
             let renderer = self.renderer.as_ref().unwrap();
+            // The headless browser fetches pages itself, bypassing
+            // `ScrapeClient::get`, so the global cross-job throttle is
+            // acquired here to keep the JS-rendering path under the same cap.
+            throttle::global_throttle().acquire().await;
             match renderer.fetch_page(url.as_str()).await {
                 Ok((html, ss)) => (html, ss),
                 Err(e) => {

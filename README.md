@@ -148,6 +148,7 @@ for the full architecture, SSE <code>Event</code> handling and test map.</p>
   <tr><td><code>EXTRACTOR_URL</code></td><td><code>http://localhost:9090</code></td><td>Python extractor endpoint (Deep Research)</td></tr>
   <tr><td><code>XWA_CORS_ORIGINS</code></td><td>localhost/LAN regex</td><td>CORS origin regex (credentials disabled)</td></tr>
   <tr><td><code>SHINOBI_BUILD_FRONTEND</code></td><td>unset</td><td>Set to <code>1</code> to build the Angular UI during <code>cargo build</code></td></tr>
+  <tr><td><code>SHINOBI_GLOBAL_RPS</code></td><td><code>5</code></td><td>Process-wide outbound request rate cap shared by all jobs (requests/second; <code>0</code> disables). Composes with the per-domain delay + jitter.</td></tr>
 </table>
 
 <hr>

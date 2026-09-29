@@ -208,8 +208,12 @@ impl Downloader {
     }
 
     fn is_html_path(&self, path: &str) -> bool {
-        let ext = path.rsplit('.').next().unwrap_or("");
-        matches!(ext, "html" | "htm" | "php" | "asp" | "aspx" | "" | "/")
+        let last = path.rsplit('/').next().unwrap_or("");
+        let ext = last.rsplit('.').next().unwrap_or("");
+        if last == ext {
+            return true;
+        }
+        matches!(ext, "html" | "htm" | "php" | "asp" | "aspx")
     }
 
     fn get_save_path(&self, url: &Url) -> String {
@@ -328,20 +332,55 @@ impl Downloader {
     }
 
     async fn fetch_sitemap(&self) -> Vec<Url> {
-        let sitemap_url = format!(
+        let mut candidates: Vec<Url> = Vec::new();
+        let base = self.base_url.as_str().trim_end_matches('/');
+        if let Ok(u) = Url::parse(&format!("{}/sitemap.xml", base)) {
+            candidates.push(u);
+        }
+        let root = format!(
             "{}://{}/sitemap.xml",
             self.base_url.scheme(),
             self.base_url.host_str().unwrap_or("")
         );
-        match self.client.get_with_retry(&sitemap_url).await {
-            Ok(resp) => {
-                let body = resp.text().await.unwrap_or_default();
-                let urls = sitemap::parse_sitemap(&body, &self.base_url);
-                info!("Found {} URLs in sitemap.xml", urls.len());
-                urls
+        if let Ok(u) = Url::parse(&root) {
+            if !candidates.contains(&u) {
+                candidates.push(u);
             }
-            Err(_) => Vec::new(),
         }
+        for candidate in candidates {
+            if let Some(urls) = self.fetch_sitemap_recursive(&candidate, 0).await {
+                info!("Found {} URLs in sitemap", urls.len());
+                return urls;
+            }
+        }
+        Vec::new()
+    }
+
+    async fn fetch_sitemap_recursive(&self, url: &Url, depth: u32) -> Option<Vec<Url>> {
+        if depth > 2 {
+            return None;
+        }
+        let resp = self.client.get_with_retry(url.as_str()).await.ok()?;
+        let body = resp.text().await.unwrap_or_default();
+        let locs = sitemap::extract_locs(&body);
+        if locs.is_empty() {
+            return None;
+        }
+        let mut urls: Vec<Url> = Vec::new();
+        for loc in &locs {
+            let Ok(u) = url.join(loc) else { continue };
+            let path = u.path();
+            if path.ends_with(".xml") {
+                if let Some(mut more) =
+                    Box::pin(self.fetch_sitemap_recursive(&u, depth + 1)).await
+                {
+                    urls.append(&mut more);
+                }
+            } else if u.scheme() == "http" || u.scheme() == "https" {
+                urls.push(u);
+            }
+        }
+        Some(urls)
     }
 
     /// Processes a single page and returns the links discovered on it.

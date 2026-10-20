@@ -200,3 +200,8 @@ data: {"seq":7,"type":"analysis_progress","tool":"shinobi","analysis_id":"&lt;jo
 </a>
 
 </div>
+
+## License
+
+Proprietary — All rights reserved. See [LICENSE](LICENSE) for the full terms.
+For permission requests: x@xscriptor.com
